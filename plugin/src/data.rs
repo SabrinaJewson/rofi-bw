@@ -4,7 +4,7 @@
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Data {
     pub(crate) profile: Profile,
-    // pub(crate) folders: Vec<Folder>,
+    pub(crate) folders: Vec<Folder>,
     pub(crate) ciphers: Vec<Cipher>,
 }
 
