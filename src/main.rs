@@ -72,19 +72,7 @@ fn main() -> anyhow::Result<()> {
     let mut clipboard = Clipboard::new().context("failed to open clipboard")?;
 
     loop {
-        let mut menu = Menu::open(&*lib_dir, &master_key, &*data).context("failed to open menu")?;
-
-        let request = match menu.read_request() {
-            Ok(request) => request,
-            Err(e) => {
-                if let Err(e) = menu.wait() {
-                    eprintln!("Error: {e:?}");
-                }
-                return Err(e.into());
-            }
-        };
-
-        menu.wait()?;
+        let request = menu::run(&*lib_dir, &master_key, &*data).context("failed to run menu")?;
 
         match request {
             ipc::MenuRequest::Copy(data) => {
@@ -98,6 +86,7 @@ fn main() -> anyhow::Result<()> {
             }
             ipc::MenuRequest::Lock => break,
             ipc::MenuRequest::LogOut => {
+                // TODO: This doesn’t actually log out
                 cache::clear(project_dirs.cache_dir());
                 break;
             }
@@ -322,7 +311,6 @@ mod cache;
 
 mod fs_overwrite;
 
-use menu::Menu;
 mod menu;
 
 use crate::cache::CacheRef;
