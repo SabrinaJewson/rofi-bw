@@ -146,7 +146,23 @@ pub(crate) fn login(
             .map_err(|e| match e {
                 ureq::Error::Status(status, res) => match res.into_string() {
                     Ok(body) => {
-                        anyhow!("status {status}: body {body:?}")
+                        #[derive(Deserialize)]
+                        struct ErrorResponse {
+                            #[serde(rename = "ErrorModel")]
+                            error_model: ErrorModel,
+                        }
+
+                        #[derive(Deserialize)]
+                        #[serde(rename_all = "PascalCase")]
+                        struct ErrorModel {
+                            message: String,
+                        }
+
+                        if let Ok(response) = serde_json::from_str::<ErrorResponse>(&body) {
+                            anyhow!("{}", response.error_model.message)
+                        } else {
+                            anyhow!("status {status}: body {body:?}")
+                        }
                     }
                     Err(e) => anyhow::Error::new(e)
                         .context(format!("status {status} and error reading body")),

@@ -13,9 +13,15 @@
     clippy::items_after_statements
 )]
 
-fn main() -> anyhow::Result<()> {
-    // TODO: Error handling
+fn main() -> process::ExitCode {
+    if let Err(e) = try_main() {
+        report_error(e.as_ref());
+        return process::ExitCode::FAILURE;
+    }
+    process::ExitCode::SUCCESS
+}
 
+fn try_main() -> anyhow::Result<()> {
     let lib_dir = env::var_os("ROFI_BW_LIB_DIR")
         .unwrap_or_else(|| "/usr/lib/rofi-bw:/usr/local/lib/rofi-bw".into());
 
@@ -72,25 +78,40 @@ fn main() -> anyhow::Result<()> {
     let mut clipboard = Clipboard::new().context("failed to open clipboard")?;
 
     loop {
-        let request = menu::run(&*lib_dir, &master_key, &*data).context("failed to run menu")?;
+        enum AfterMenu {
+            ContinueServing,
+            Reload,
+            StopServing,
+        }
 
-        match request {
-            ipc::MenuRequest::Copy(data) => {
-                clipboard
-                    .set_text(String::from(data))
-                    .context("failed to set clipboard content")?;
-            }
-            ipc::MenuRequest::Sync => {
-                data = client.sync()?;
-                continue;
-            }
-            ipc::MenuRequest::Lock => break,
-            ipc::MenuRequest::LogOut => {
-                // TODO: This doesn’t actually log out
-                cache::clear(project_dirs.cache_dir());
-                break;
-            }
-            ipc::MenuRequest::Exit => {}
+        let res: anyhow::Result<_> = (|| {
+            Ok(match menu::run(&*lib_dir, &master_key, &*data)? {
+                ipc::MenuRequest::Copy(data) => {
+                    clipboard
+                        .set_text(String::from(data))
+                        .context("failed to set clipboard content")?;
+                    AfterMenu::ContinueServing
+                }
+                ipc::MenuRequest::Sync => {
+                    // TODO: handle expired errors
+                    data = client.sync()?;
+                    AfterMenu::Reload
+                }
+                ipc::MenuRequest::Lock => AfterMenu::StopServing,
+                ipc::MenuRequest::LogOut => {
+                    // TODO: This doesn’t actually log out
+                    cache::clear(project_dirs.cache_dir());
+                    AfterMenu::StopServing
+                }
+                ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
+            })
+        })();
+
+        match res {
+            Ok(AfterMenu::ContinueServing) => {}
+            Ok(AfterMenu::Reload) => continue,
+            Ok(AfterMenu::StopServing) => break,
+            Err(e) => report_error(e.context("failed to run menu").as_ref()),
         }
 
         let mut buf = [0; 1];
@@ -313,6 +334,9 @@ mod fs_overwrite;
 
 mod menu;
 
+use error_reporting::report_error;
+mod error_reporting;
+
 use crate::cache::CacheRef;
 use anyhow::Context as _;
 use arboard::Clipboard;
@@ -327,5 +351,6 @@ use std::fs;
 use std::io;
 use std::os::unix::net::UnixDatagram;
 use std::path::Path;
+use std::process;
 use std::thread;
 use zeroize::Zeroizing;
