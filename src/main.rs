@@ -84,6 +84,8 @@ fn main() -> anyhow::Result<()> {
             }
         };
 
+        menu.wait()?;
+
         match request {
             ipc::MenuRequest::Copy(data) => {
                 clipboard

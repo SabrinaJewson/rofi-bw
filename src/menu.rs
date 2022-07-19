@@ -1,3 +1,4 @@
+// TODO: refactor to a single function?
 pub(crate) struct Menu {
     rofi: process::Child,
     pipe: BufReader<UnixStream>,
