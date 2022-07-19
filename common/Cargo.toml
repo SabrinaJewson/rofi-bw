@@ -1,0 +1,9 @@
+[package]
+name = "rofi-bw-common"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+directories = "4.0.1"
+zeroize = { version = "1.5.6", features = ["std"] }

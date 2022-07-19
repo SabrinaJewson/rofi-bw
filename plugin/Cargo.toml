@@ -1,0 +1,33 @@
+[package]
+name = "rofi-bw-plugin"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rofi-bw-common = { path = "../common" }
+
+# RustCrypto
+aes = { version = "0.8.1", features = ["zeroize"] }
+block-padding = { version = "0.3.2", features = ["std"] }
+cbc = { version = "0.1.2", features = ["std", "zeroize"] }
+cipher = { version = "0.4.3", features = ["std", "block-padding", "zeroize"] }
+crypto-common = { version = "0.1.5", features = ["std"] }
+digest = { version = "0.10.3", features = ["std"] }
+hkdf = { version = "0.12.3", features = ["std"] }
+hmac = { version = "0.12.1", features = ["std"] }
+sha2 = { version = "0.10.2", features = ["std"] }
+
+anyhow = { version = "1.0.58", features = ["std"] }
+base64 = { version = "0.13.0", features = ["std"] }
+rand = { version = "0.8.5", features = ["std"] }
+rofi-mode = "0.2.2"
+serde = { version = "1.0.139", features = ["derive"] }
+serde_json = "1.0.82"
+time = { version = "0.3.11", features = ["serde", "parsing", "serde-well-known"] }
+uuid = { version = "1.1.2", features = ["std", "serde"] }
+zeroize = { version = "1.5.6", features = ["std"] }
