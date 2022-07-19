@@ -994,12 +994,9 @@ dependencies = [
  "rand",
  "rofi-bw-common",
  "serde",
- "serde_json",
  "sha2",
- "time",
  "toml",
  "ureq",
- "uuid",
  "zeroize",
 ]
 

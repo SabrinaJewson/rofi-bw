@@ -26,7 +26,6 @@ hmac = "0.12.1"
 pbkdf2 = "0.11.0"
 sha2 = "0.10.2"
 
-# TODO: prune deps
 anyhow = "1.0.58"
 arboard = { version = "2.1.1", default-features = false }
 base64 = "0.13.0"
@@ -36,9 +35,6 @@ itoa = "1.0.2"
 libc = "0.2.126"
 rand = "0.8.5"
 serde = { version = "1.0.137", features = ["derive"] }
-serde_json = { version = "1.0.82", features = ["raw_value"] }
-time = { version = "0.3.11", features = ["serde", "parsing", "serde-well-known"] }
 toml = "0.5.9"
 ureq = { version = "2.4.0", features = ["tls", "json"] }
-uuid = { version = "1.1.2", features = ["serde"] }
 zeroize = "1.5.6"
