@@ -20,7 +20,8 @@ impl Menu {
 
         let mut arg_name_buf = String::new();
         for (i, keybind) in rofi_bw_common::KEYBINDS.iter().enumerate() {
-            write!(arg_name_buf, "kb-custom-{}", i + 1).unwrap();
+            arg_name_buf.clear();
+            write!(arg_name_buf, "-kb-custom-{}", i + 1).unwrap();
             rofi.arg(&*arg_name_buf).arg(keybind.combination);
         }
 
