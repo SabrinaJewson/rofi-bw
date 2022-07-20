@@ -1,4 +1,3 @@
-#[derive(Serialize, Deserialize)]
 pub(crate) struct Data {
     pub(crate) email: Option<String>,
     pub(crate) device_id: Uuid,
