@@ -231,7 +231,7 @@ impl client::TokenSource for TokenSource {
     type Error = auth::RefreshError;
     fn access_token(&mut self) -> Result<&str, Self::Error> {
         if self.token.is_expired() {
-            self.token = auth::refresh_token(&self.http, "web", &*self.token.refresh_token)?;
+            self.token = auth::refresh_token(&self.http, CLIENT_ID, &*self.token.refresh_token)?;
         }
         Ok(&*self.token.access_token)
     }
