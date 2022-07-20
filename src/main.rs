@@ -79,11 +79,7 @@ fn try_main() -> anyhow::Result<()> {
             token_source,
             base_url: "https://vault.bitwarden.com/api",
         };
-        let mut account_data = match client.sync() {
-            Ok(account_data) => account_data,
-            Err(client::SyncError::Token(auth::RefreshError::SessionExpired(_))) => continue,
-            Err(e) => return Err(e.into()),
-        };
+        let mut account_data = client.sync()?;
 
         loop {
             enum AfterMenu {
@@ -101,16 +97,24 @@ fn try_main() -> anyhow::Result<()> {
                             .context("failed to set clipboard content")?;
                         AfterMenu::ContinueServing
                     }
-                    ipc::MenuRequest::Sync => match client.sync() {
-                        Ok(new_account_data) => {
-                            account_data = new_account_data;
-                            AfterMenu::ShowMenuAgain
+                    ipc::MenuRequest::Sync => {
+                        // Force a token refresh. This is needed to make sure that our session
+                        // hasn't expired; if it has, it’s likely the master password or KDF
+                        // iterations have changed, and so we need to enter the master password
+                        // again.
+                        client.token_source.token.access_token.clear();
+
+                        match client.sync() {
+                            Ok(new_account_data) => {
+                                account_data = new_account_data;
+                                AfterMenu::ShowMenuAgain
+                            }
+                            Err(client::SyncError::Token(auth::RefreshError::SessionExpired(
+                                _,
+                            ))) => AfterMenu::UnlockAgain,
+                            Err(e) => return Err(e.into()),
                         }
-                        Err(client::SyncError::Token(auth::RefreshError::SessionExpired(_))) => {
-                            AfterMenu::UnlockAgain
-                        }
-                        Err(e) => return Err(e.into()),
-                    },
+                    }
                     ipc::MenuRequest::Lock => AfterMenu::StopServing,
                     ipc::MenuRequest::LogOut => {
                         data.email = None;

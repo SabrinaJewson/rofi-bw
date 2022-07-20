@@ -304,7 +304,7 @@ pub(crate) struct AccessToken {
 
 impl AccessToken {
     pub(crate) fn is_expired(&self) -> bool {
-        SystemTime::now() >= self.expires
+        self.access_token.is_empty() || SystemTime::now() >= self.expires
     }
 }
 
