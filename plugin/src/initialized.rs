@@ -14,6 +14,9 @@ impl Initialized {
 
         let mut entries = Vec::new();
         for cipher in data.ciphers {
+            if cipher.deleted_date.is_some() {
+                continue;
+            }
             let login = match cipher.data {
                 CipherData::Login(login) => login,
                 _ => continue,
