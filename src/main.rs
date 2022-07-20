@@ -134,19 +134,6 @@ fn try_main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn invoke_daemon(socket_path: &Path) -> anyhow::Result<bool> {
-    let socket = UnixDatagram::unbound().context("failed to create client socket")?;
-    match socket.send_to(&[ipc_commands::SHOW], socket_path) {
-        Ok(_) => Ok(true),
-        Err(e)
-            if [io::ErrorKind::NotFound, io::ErrorKind::ConnectionRefused].contains(&e.kind()) =>
-        {
-            Ok(false)
-        }
-        Err(e) => Err(anyhow::Error::new(e).context("failed to send to daemon")),
-    }
-}
-
 fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
     // Try to prevent leaking of the master password into memory via a large buffer
     let mut master_password = Zeroizing::new(String::with_capacity(1024));
@@ -229,11 +216,6 @@ impl client::TokenSource for TokenSource {
     }
 }
 
-mod ipc_commands {
-    /// Show the password chooser menu
-    pub(crate) const SHOW: u8 = 0;
-}
-
 use prompt::prompt;
 mod prompt {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -314,11 +296,7 @@ use directories::ProjectDirs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
 use std::env;
-use std::fs;
-use std::io;
-use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 use std::process;
-use std::thread;
 use uuid::Uuid;
 use zeroize::Zeroizing;

@@ -122,10 +122,6 @@ fn store_inner(dir_path: &Path, key: &Key, data: CacheRef<'_, '_>) -> anyhow::Re
     Ok(())
 }
 
-pub(crate) fn clear(dir_path: &Path) {
-    drop(fs::remove_file(dir_path.join(CACHE_FILE_NAME)));
-}
-
 const CACHE_FILE_NAME: &str = "cache";
 
 struct Reader<'source>(&'source [u8]);
