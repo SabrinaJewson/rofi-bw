@@ -29,7 +29,7 @@ impl Daemon {
         drop(fs::create_dir_all(runtime_dir));
         drop(fs::remove_file(&*socket_path));
 
-        let mut socket = UnixDatagram::bind(&*socket_path)
+        let socket = UnixDatagram::bind(&*socket_path)
             .with_context(|| format!("failed to bind to socket at {}", socket_path.display()))?;
 
         let should_wait = match auto_lock {
