@@ -26,17 +26,19 @@ pub(crate) fn run(
 
     drop(child_stream);
 
-    ipc::handshake::write(&mut parent_stream, master_key, data.as_bytes())?;
+    // Capture IPC errors, because status code errors should take precedence
+    // (and we also don't want a zombie process).
+    let ipc_result: anyhow::Result<_> = (|| {
+        ipc::handshake::write(&mut parent_stream, master_key, data.as_bytes())?;
 
-    let mut pipe = BufReader::new(parent_stream);
-    let res = ipc::MenuRequest::read(&mut pipe);
-
-    drop(pipe);
+        let mut pipe = BufReader::new(parent_stream);
+        Ok(ipc::MenuRequest::read(&mut pipe)?)
+    })();
 
     let status = rofi.wait().context("failed to wait on rofi")?;
     anyhow::ensure!(status.success(), "rofi failed with {status}");
 
-    Ok(res?)
+    ipc_result
 }
 
 fn unset_cloexec(fd: RawFd) -> io::Result<()> {
