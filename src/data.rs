@@ -33,7 +33,9 @@ impl Data {
             [versions::V0, toml @ ..] => {
                 toml::from_slice::<Stored>(toml).context("data file is invalid")?
             }
-            [version, ..] => anyhow::bail!("unknown version {version:?} in data file"),
+            &[version, ..] => {
+                anyhow::bail!("unknown version {:?} in data file", char::from(version))
+            }
             [] => anyhow::bail!("data file is empty"),
         };
 
