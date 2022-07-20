@@ -41,17 +41,17 @@ pub mod keybinds {
     /// The keybindings, ordered by their custom command number.
     pub const KEYBINDS: &[Keybind] = &[
         Keybind {
-            combination: "Alt+s",
+            combination: "Control+s",
             action: MenuRequest::Sync,
             description: "Sync",
         },
         Keybind {
-            combination: "Alt+l",
+            combination: "Control+q",
             action: MenuRequest::Lock,
             description: "Lock",
         },
         Keybind {
-            combination: "Alt+o",
+            combination: "Control+o",
             action: MenuRequest::LogOut,
             description: "Log out",
         },
