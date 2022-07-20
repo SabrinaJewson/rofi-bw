@@ -41,87 +41,95 @@ fn try_main() -> anyhow::Result<()> {
 
     let mut data = Data::load(project_dirs.data_dir())?;
 
-    if data.email.is_none() {
-        data.email = Some(match ask_email()? {
-            Some(email) => email,
-            None => return Ok(()),
-        });
-        data.store()?;
-    }
-    let email = data.email.as_ref().unwrap();
-
     let http = ureq::agent();
-
-    let (master_key, token) = {
-        let master_password = match ask_master_password()? {
-            Some(master_password) => master_password,
-            None => return Ok(()),
-        };
-
-        unlock_or_log_in(
-            &http,
-            project_dirs.cache_dir(),
-            &data.device_id,
-            &*email,
-            &**master_password,
-        )?
-    };
-
-    let token_source = TokenSource {
-        http: http.clone(),
-        token,
-    };
-    let mut client = Client {
-        http,
-        token_source,
-        base_url: "https://vault.bitwarden.com/api",
-    };
-    let mut account_data = client.sync()?;
 
     let mut clipboard = Clipboard::new().context("failed to open clipboard")?;
 
     loop {
-        enum AfterMenu {
-            ContinueServing,
-            Reload,
-            StopServing,
+        if data.email.is_none() {
+            data.email = Some(match ask_email()? {
+                Some(email) => email,
+                None => return Ok(()),
+            });
+            data.store()?;
         }
+        let email = data.email.as_ref().unwrap();
 
-        let res: anyhow::Result<_> = (|| {
-            Ok(match menu::run(&*lib_dir, &master_key, &*account_data)? {
-                ipc::MenuRequest::Copy(data) => {
-                    clipboard
-                        .set_text(String::from(data))
-                        .context("failed to set clipboard content")?;
+        let (master_key, token) = {
+            let master_password = match ask_master_password()? {
+                Some(master_password) => master_password,
+                None => return Ok(()),
+            };
+
+            unlock_or_log_in(
+                &http,
+                project_dirs.cache_dir(),
+                &data.device_id,
+                &*email,
+                &**master_password,
+            )?
+        };
+
+        let token_source = TokenSource {
+            http: http.clone(),
+            token,
+        };
+        let mut client = Client {
+            http: http.clone(),
+            token_source,
+            base_url: "https://vault.bitwarden.com/api",
+        };
+        let mut account_data = client.sync()?;
+
+        loop {
+            enum AfterMenu {
+                ShowMenuAgain,
+                ContinueServing,
+                UnlockAgain,
+                StopServing,
+            }
+
+            let res: anyhow::Result<_> = (|| {
+                Ok(match menu::run(&*lib_dir, &master_key, &*account_data)? {
+                    ipc::MenuRequest::Copy(data) => {
+                        clipboard
+                            .set_text(String::from(data))
+                            .context("failed to set clipboard content")?;
+                        AfterMenu::ContinueServing
+                    }
+                    ipc::MenuRequest::Sync => {
+                        // TODO: handle expired errors
+                        account_data = client.sync()?;
+                        AfterMenu::ShowMenuAgain
+                    }
+                    ipc::MenuRequest::Lock => AfterMenu::StopServing,
+                    ipc::MenuRequest::LogOut => {
+                        data.email = None;
+                        data.store()?;
+                        AfterMenu::UnlockAgain
+                    }
+                    ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
+                })
+            })();
+
+            let after_menu = match res {
+                Ok(after_menu) => after_menu,
+                Err(e) => {
+                    report_error(e.context("failed to run menu").as_ref());
                     AfterMenu::ContinueServing
                 }
-                ipc::MenuRequest::Sync => {
-                    // TODO: handle expired errors
-                    account_data = client.sync()?;
-                    AfterMenu::Reload
-                }
-                ipc::MenuRequest::Lock => AfterMenu::StopServing,
-                ipc::MenuRequest::LogOut => {
-                    data.email = None;
-                    data.store()?;
-                    // TODO: restart the daemon
-                    AfterMenu::StopServing
-                }
-                ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
-            })
-        })();
+            };
 
-        match res {
-            Ok(AfterMenu::ContinueServing) => {}
-            Ok(AfterMenu::Reload) => continue,
-            Ok(AfterMenu::StopServing) => break,
-            Err(e) => report_error(e.context("failed to run menu").as_ref()),
+            match after_menu {
+                AfterMenu::ShowMenuAgain => continue,
+                AfterMenu::ContinueServing => {}
+                AfterMenu::UnlockAgain => break,
+                AfterMenu::StopServing => return Ok(()),
+            }
+
+            daemon.wait();
         }
-
-        daemon.wait();
     }
-
-    Ok(())
 }
 
 fn ask_email() -> anyhow::Result<Option<String>> {
