@@ -48,34 +48,30 @@ fn try_main() -> anyhow::Result<()> {
     };
 
     if data.email.is_none() {
-        let mut email = String::new();
-        if prompt("Email address", prompt::Visibility::Shown, &mut email)?
-            == prompt::Outcome::Cancelled
-        {
-            return Ok(());
-        }
-        data.email = Some(email);
+        data.email = Some(match ask_email()? {
+            Some(email) => email,
+            None => return Ok(()),
+        });
         data::store(project_dirs.data_dir(), &data)?;
     }
-
     let email = data.email.as_ref().unwrap();
 
     let http = ureq::agent();
 
-    let master_password = match ask_master_password()? {
-        Some(master_password) => master_password,
-        None => return Ok(()),
+    let (master_key, token) = {
+        let master_password = match ask_master_password()? {
+            Some(master_password) => master_password,
+            None => return Ok(()),
+        };
+
+        unlock_or_log_in(
+            &http,
+            project_dirs.cache_dir(),
+            &data.device_id,
+            &*email,
+            &**master_password,
+        )?
     };
-
-    let (master_key, token) = unlock_or_log_in(
-        &http,
-        project_dirs.cache_dir(),
-        &data.device_id,
-        &*email,
-        &**master_password,
-    )?;
-
-    drop(master_password);
 
     let token_source = TokenSource {
         http: http.clone(),
@@ -134,6 +130,18 @@ fn try_main() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn ask_email() -> anyhow::Result<Option<String>> {
+    let mut email = String::new();
+    if prompt("Email address", prompt::Visibility::Shown, &mut email)
+        .context("failed to prompt for email")?
+        == prompt::Outcome::Cancelled
+        || email.is_empty()
+    {
+        return Ok(None);
+    }
+    Ok(Some(email))
+}
+
 fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
     // Try to prevent leaking of the master password into memory via a large buffer
     let mut master_password = Zeroizing::new(String::with_capacity(1024));
@@ -141,7 +149,10 @@ fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
         "Master password",
         prompt::Visibility::Hidden,
         &mut *master_password,
-    )? == prompt::Outcome::Cancelled
+    )
+    .context("failed to prompt for master password")?
+        == prompt::Outcome::Cancelled
+        || master_password.is_empty()
     {
         return Ok(None);
     }
