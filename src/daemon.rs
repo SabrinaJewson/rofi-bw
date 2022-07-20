@@ -19,29 +19,41 @@ fn invoke_inner(runtime_dir: &Path) -> anyhow::Result<bool> {
 
 pub(crate) struct Daemon {
     socket: UnixDatagram,
+    should_wait: bool,
 }
 
 impl Daemon {
-    pub(crate) fn bind(runtime_dir: &Path) -> anyhow::Result<Self> {
+    pub(crate) fn bind(runtime_dir: &Path, auto_lock: AutoLock) -> anyhow::Result<Self> {
         let socket_path = runtime_dir.join(SOCKET_FILE_NAME);
 
         drop(fs::create_dir_all(runtime_dir));
         drop(fs::remove_file(&*socket_path));
 
-        let socket = UnixDatagram::bind(&*socket_path)
+        let mut socket = UnixDatagram::bind(&*socket_path)
             .with_context(|| format!("failed to bind to socket at {}", socket_path.display()))?;
 
-        Ok(Self { socket })
-    }
+        let should_wait = match auto_lock {
+            AutoLock::After(Duration::ZERO) => false,
+            AutoLock::After(timeout) => {
+                socket
+                    .set_read_timeout(Some(timeout))
+                    .context("failed to set socket timeout")?;
+                true
+            }
+            AutoLock::Never => true,
+        };
 
-    pub(crate) fn set_timeout(&mut self, timeout: Option<Duration>) -> anyhow::Result<()> {
-        self.socket
-            .set_read_timeout(timeout)
-            .context("failed to set socket timeout")?;
-        Ok(())
+        Ok(Self {
+            socket,
+            should_wait,
+        })
     }
 
     pub(crate) fn wait(&mut self) -> Event {
+        if !self.should_wait {
+            return Event::Timeout;
+        }
+
         let mut buf = [0; 1];
 
         loop {
@@ -77,6 +89,7 @@ mod commands {
     pub(crate) const SHOW: u8 = 0;
 }
 
+use crate::config::AutoLock;
 use anyhow::Context as _;
 use std::fs;
 use std::io;
