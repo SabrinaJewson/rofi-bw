@@ -43,9 +43,18 @@ fn try_main() -> anyhow::Result<()> {
     drop(fs::remove_file(&*socket_path));
     let listener = UnixDatagram::bind(&*socket_path).context("failed to bind to socket")?;
 
-    let config = match load_config(&*project_dirs.config_dir())? {
-        Some(config) => config,
-        None => return Ok(()),
+    let email = match account::load(project_dirs.data_dir())? {
+        Some(email) => email,
+        None => {
+            let mut email = String::new();
+            if prompt("Email address", prompt::Visibility::Shown, &mut email)?
+                == prompt::Outcome::Cancelled
+            {
+                return Ok(());
+            }
+            account::store(project_dirs.data_dir(), &*email)?;
+            email
+        }
     };
 
     let http = ureq::agent();
@@ -55,12 +64,8 @@ fn try_main() -> anyhow::Result<()> {
         None => return Ok(()),
     };
 
-    let (master_key, token) = unlock_or_log_in(
-        &http,
-        project_dirs.cache_dir(),
-        &*config.email,
-        &**master_password,
-    )?;
+    let (master_key, token) =
+        unlock_or_log_in(&http, project_dirs.cache_dir(), &*email, &**master_password)?;
 
     drop(master_password);
 
@@ -99,8 +104,7 @@ fn try_main() -> anyhow::Result<()> {
                 }
                 ipc::MenuRequest::Lock => AfterMenu::StopServing,
                 ipc::MenuRequest::LogOut => {
-                    // TODO: This doesn’t actually log out
-                    cache::clear(project_dirs.cache_dir());
+                    account::log_out(project_dirs.data_dir())?;
                     AfterMenu::StopServing
                 }
                 ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
@@ -116,6 +120,7 @@ fn try_main() -> anyhow::Result<()> {
 
         let mut buf = [0; 1];
 
+        // TODO: Timeout to auto-lock
         if let Err(e) = listener.recv(&mut buf) {
             eprintln!(
                 "Warning: {:?}",
@@ -148,40 +153,6 @@ fn invoke_daemon(socket_path: &Path) -> anyhow::Result<bool> {
         }
         Err(e) => Err(anyhow::Error::new(e).context("failed to send to daemon")),
     }
-}
-
-#[derive(Serialize, Deserialize)]
-struct Config {
-    email: String,
-}
-
-// TODO: Remove this, putting the email in cache instead
-fn load_config(config_dir: &Path) -> anyhow::Result<Option<Config>> {
-    let config_file_path = config_dir.join("config.toml");
-
-    match fs::read_to_string(&*config_file_path) {
-        Ok(content) => {
-            let config = toml::from_str(&*content).context("failed to parse config file")?;
-            return Ok(Some(config));
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e).context("failed to read config file")?,
-    }
-
-    // Config not found, prompt the user
-
-    let mut email = String::new();
-    if prompt("Email address", prompt::Visibility::Shown, &mut email)? == prompt::Outcome::Cancelled
-    {
-        return Ok(None);
-    }
-
-    let config = Config { email };
-
-    fs_overwrite::overwrite(config_file_path, toml::to_string_pretty(&config).unwrap())
-        .context("failed to write config file")?;
-
-    Ok(Some(config))
 }
 
 fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
@@ -330,6 +301,8 @@ mod client;
 
 mod cache;
 
+mod account;
+
 mod fs_overwrite;
 
 mod menu;
@@ -344,8 +317,6 @@ use client::Client;
 use directories::ProjectDirs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
-use serde::Deserialize;
-use serde::Serialize;
 use std::env;
 use std::fs;
 use std::io;
