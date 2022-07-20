@@ -34,26 +34,40 @@ impl Daemon {
         Ok(Self { socket })
     }
 
-    pub(crate) fn wait(&mut self) {
+    pub(crate) fn set_timeout(&mut self, timeout: Option<Duration>) -> anyhow::Result<()> {
+        self.socket
+            .set_read_timeout(timeout)
+            .context("failed to set socket timeout")?;
+        Ok(())
+    }
+
+    pub(crate) fn wait(&mut self) -> Event {
         let mut buf = [0; 1];
 
         loop {
-            // TODO: Timeout to auto-lock
             if let Err(e) = self.socket.recv(&mut buf) {
+                if e.kind() == io::ErrorKind::WouldBlock {
+                    break Event::Timeout;
+                }
                 eprintln!(
                     "Warning: {:?}",
                     anyhow::Error::new(e).context("failed to recv")
                 );
                 thread::sleep(std::time::Duration::from_secs(2));
-                return;
+                continue;
             }
 
             match buf {
-                [commands::SHOW] => break,
+                [commands::SHOW] => break Event::ShowMenu,
                 [command] => eprintln!("Warning: received unknown command {command}"),
             }
         }
     }
+}
+
+pub(crate) enum Event {
+    ShowMenu,
+    Timeout,
 }
 
 const SOCKET_FILE_NAME: &str = "rofi-bw-session";
@@ -69,3 +83,4 @@ use std::io;
 use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 use std::thread;
+use std::time::Duration;

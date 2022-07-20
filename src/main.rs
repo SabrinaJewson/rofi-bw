@@ -37,7 +37,17 @@ fn try_main() -> anyhow::Result<()> {
 
     // Having failed to invoke an existing daemon, we must now become the daemon.
 
+    let config = config::load(project_dirs.config_dir())?;
+
     let mut daemon = Daemon::bind(runtime_dir)?;
+    let should_wait = match config.auto_lock {
+        config::AutoLock::After(Duration::ZERO) => false,
+        config::AutoLock::After(timeout) => {
+            daemon.set_timeout(Some(timeout))?;
+            true
+        }
+        config::AutoLock::Never => true,
+    };
 
     let mut data = Data::load(project_dirs.data_dir())?;
 
@@ -140,7 +150,14 @@ fn try_main() -> anyhow::Result<()> {
                 AfterMenu::StopServing => return Ok(()),
             }
 
-            daemon.wait();
+            if !should_wait {
+                return Ok(());
+            }
+
+            match daemon.wait() {
+                daemon::Event::ShowMenu => {}
+                daemon::Event::Timeout => return Ok(()),
+            }
         }
     }
 }
@@ -303,6 +320,8 @@ mod client;
 
 mod cache;
 
+mod config;
+
 use data::Data;
 mod data;
 
@@ -324,5 +343,6 @@ use rofi_bw_common::MasterKey;
 use std::env;
 use std::path::Path;
 use std::process;
+use std::time::Duration;
 use uuid::Uuid;
 use zeroize::Zeroizing;

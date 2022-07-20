@@ -19,7 +19,7 @@ impl Data {
                 this.store()?;
                 return Ok(this);
             }
-            Err(e) => return Err(e).context(format!("failed to read {}", path.display()))?,
+            Err(e) => return Err(e).context(format!("failed to read {}", path.display())),
         };
 
         #[derive(Deserialize)]
