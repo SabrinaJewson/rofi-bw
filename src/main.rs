@@ -79,7 +79,11 @@ fn try_main() -> anyhow::Result<()> {
             token_source,
             base_url: "https://vault.bitwarden.com/api",
         };
-        let mut account_data = client.sync()?;
+        let mut account_data = match client.sync() {
+            Ok(account_data) => account_data,
+            Err(client::SyncError::Token(auth::RefreshError::SessionExpired(_))) => continue,
+            Err(e) => return Err(e.into()),
+        };
 
         loop {
             enum AfterMenu {
@@ -97,11 +101,16 @@ fn try_main() -> anyhow::Result<()> {
                             .context("failed to set clipboard content")?;
                         AfterMenu::ContinueServing
                     }
-                    ipc::MenuRequest::Sync => {
-                        // TODO: handle expired errors
-                        account_data = client.sync()?;
-                        AfterMenu::ShowMenuAgain
-                    }
+                    ipc::MenuRequest::Sync => match client.sync() {
+                        Ok(new_account_data) => {
+                            account_data = new_account_data;
+                            AfterMenu::ShowMenuAgain
+                        }
+                        Err(client::SyncError::Token(auth::RefreshError::SessionExpired(_))) => {
+                            AfterMenu::UnlockAgain
+                        }
+                        Err(e) => return Err(e.into()),
+                    },
                     ipc::MenuRequest::Lock => AfterMenu::StopServing,
                     ipc::MenuRequest::LogOut => {
                         data.email = None;
