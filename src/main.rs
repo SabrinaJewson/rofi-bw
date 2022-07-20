@@ -39,20 +39,14 @@ fn try_main() -> anyhow::Result<()> {
 
     let mut daemon = Daemon::bind(runtime_dir)?;
 
-    let mut data = match data::load(project_dirs.data_dir())? {
-        Some(data) => data,
-        None => Data {
-            email: None,
-            device_id: Uuid::new_v4(),
-        },
-    };
+    let mut data = Data::load(project_dirs.data_dir())?;
 
     if data.email.is_none() {
         data.email = Some(match ask_email()? {
             Some(email) => email,
             None => return Ok(()),
         });
-        data::store(project_dirs.data_dir(), &data)?;
+        data.store()?;
     }
     let email = data.email.as_ref().unwrap();
 
@@ -109,7 +103,7 @@ fn try_main() -> anyhow::Result<()> {
                 ipc::MenuRequest::Lock => AfterMenu::StopServing,
                 ipc::MenuRequest::LogOut => {
                     data.email = None;
-                    data::store(project_dirs.data_dir(), &data)?;
+                    data.store()?;
                     // TODO: restart the daemon
                     AfterMenu::StopServing
                 }
