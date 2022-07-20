@@ -43,19 +43,26 @@ fn try_main() -> anyhow::Result<()> {
     drop(fs::remove_file(&*socket_path));
     let listener = UnixDatagram::bind(&*socket_path).context("failed to bind to socket")?;
 
-    let email = match account::load(project_dirs.data_dir())? {
-        Some(email) => email,
-        None => {
-            let mut email = String::new();
-            if prompt("Email address", prompt::Visibility::Shown, &mut email)?
-                == prompt::Outcome::Cancelled
-            {
-                return Ok(());
-            }
-            account::store(project_dirs.data_dir(), &*email)?;
-            email
-        }
+    let mut data = match data::load(project_dirs.data_dir())? {
+        Some(data) => data,
+        None => Data {
+            email: None,
+            device_id: Uuid::new_v4(),
+        },
     };
+
+    if data.email.is_none() {
+        let mut email = String::new();
+        if prompt("Email address", prompt::Visibility::Shown, &mut email)?
+            == prompt::Outcome::Cancelled
+        {
+            return Ok(());
+        }
+        data.email = Some(email);
+        data::store(project_dirs.data_dir(), &data)?;
+    }
+
+    let email = data.email.as_ref().unwrap();
 
     let http = ureq::agent();
 
@@ -64,8 +71,13 @@ fn try_main() -> anyhow::Result<()> {
         None => return Ok(()),
     };
 
-    let (master_key, token) =
-        unlock_or_log_in(&http, project_dirs.cache_dir(), &*email, &**master_password)?;
+    let (master_key, token) = unlock_or_log_in(
+        &http,
+        project_dirs.cache_dir(),
+        &data.device_id,
+        &*email,
+        &**master_password,
+    )?;
 
     drop(master_password);
 
@@ -78,7 +90,7 @@ fn try_main() -> anyhow::Result<()> {
         token_source,
         base_url: "https://vault.bitwarden.com/api",
     };
-    let mut data = client.sync()?;
+    let mut account_data = client.sync()?;
 
     let mut clipboard = Clipboard::new().context("failed to open clipboard")?;
 
@@ -90,7 +102,7 @@ fn try_main() -> anyhow::Result<()> {
         }
 
         let res: anyhow::Result<_> = (|| {
-            Ok(match menu::run(&*lib_dir, &master_key, &*data)? {
+            Ok(match menu::run(&*lib_dir, &master_key, &*account_data)? {
                 ipc::MenuRequest::Copy(data) => {
                     clipboard
                         .set_text(String::from(data))
@@ -99,12 +111,14 @@ fn try_main() -> anyhow::Result<()> {
                 }
                 ipc::MenuRequest::Sync => {
                     // TODO: handle expired errors
-                    data = client.sync()?;
+                    account_data = client.sync()?;
                     AfterMenu::Reload
                 }
                 ipc::MenuRequest::Lock => AfterMenu::StopServing,
                 ipc::MenuRequest::LogOut => {
-                    account::log_out(project_dirs.data_dir())?;
+                    data.email = None;
+                    data::store(project_dirs.data_dir(), &data)?;
+                    // TODO: restart the daemon
                     AfterMenu::StopServing
                 }
                 ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
@@ -173,6 +187,7 @@ fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
 fn unlock_or_log_in(
     http: &ureq::Agent,
     cache_dir: &Path,
+    device_id: &Uuid,
     email: &str,
     master_password: &str,
 ) -> anyhow::Result<(MasterKey, AccessToken)> {
@@ -197,7 +212,11 @@ fn unlock_or_log_in(
             let (prelogin, master_key, token) = auth::login(
                 http,
                 CLIENT_ID,
-                DEVICE,
+                auth::Device {
+                    name: "linux",
+                    identifier: &*format!("{:x}", device_id.as_hyphenated()),
+                    r#type: auth::DeviceType::LinuxDesktop,
+                },
                 auth::Scopes::all(),
                 email,
                 master_password,
@@ -216,11 +235,6 @@ fn unlock_or_log_in(
 }
 
 const CLIENT_ID: &str = "desktop";
-const DEVICE: auth::Device = auth::Device {
-    name: "linux",
-    identifier: "33f236b8-3284-41a6-9814-118e488f5557",
-    r#type: auth::DeviceType::LinuxDesktop,
-};
 
 struct TokenSource {
     http: ureq::Agent,
@@ -301,7 +315,8 @@ mod client;
 
 mod cache;
 
-mod account;
+use data::Data;
+mod data;
 
 mod fs_overwrite;
 
@@ -324,4 +339,5 @@ use std::os::unix::net::UnixDatagram;
 use std::path::Path;
 use std::process;
 use std::thread;
+use uuid::Uuid;
 use zeroize::Zeroizing;
