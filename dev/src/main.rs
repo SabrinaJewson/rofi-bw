@@ -19,7 +19,6 @@ fn main() -> anyhow::Result<()> {
     match Args::parse() {
         Args::Build(args) => build(args),
         Args::Run(args) => run(args),
-        Args::Install(args) => install(args),
     }
 }
 
@@ -28,7 +27,6 @@ fn main() -> anyhow::Result<()> {
 enum Args {
     Build(BuildArgs),
     Run(RunArgs),
-    Install(InstallArgs),
 }
 
 /// Build rofi-bw
@@ -94,15 +92,6 @@ fn run(args: RunArgs) -> anyhow::Result<()> {
     anyhow::ensure!(status.success(), "rofi-bw failed");
 
     Ok(())
-}
-
-/// Install rofi-bw into /usr/local (only works after building)
-#[derive(Debug, clap::Parser)]
-// TODO: this
-struct InstallArgs {}
-
-fn install(args: InstallArgs) -> anyhow::Result<()> {
-    todo!()
 }
 
 use anyhow::Context as _;
