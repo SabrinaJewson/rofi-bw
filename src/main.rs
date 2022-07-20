@@ -31,17 +31,13 @@ fn try_main() -> anyhow::Result<()> {
         .runtime_dir()
         .context("failed to locate runtime directory")?;
 
-    let socket_path = runtime_dir.join("rofi-bw-session");
-
-    if invoke_daemon(&*socket_path).context("failed to invoke daemon")? {
+    if daemon::invoke(runtime_dir)? {
         return Ok(());
     }
 
     // Having failed to invoke an existing daemon, we must now become the daemon.
 
-    drop(fs::create_dir_all(runtime_dir));
-    drop(fs::remove_file(&*socket_path));
-    let listener = UnixDatagram::bind(&*socket_path).context("failed to bind to socket")?;
+    let mut daemon = Daemon::bind(runtime_dir)?;
 
     let mut data = match data::load(project_dirs.data_dir())? {
         Some(data) => data,
@@ -132,25 +128,7 @@ fn try_main() -> anyhow::Result<()> {
             Err(e) => report_error(e.context("failed to run menu").as_ref()),
         }
 
-        let mut buf = [0; 1];
-
-        // TODO: Timeout to auto-lock
-        if let Err(e) = listener.recv(&mut buf) {
-            eprintln!(
-                "Warning: {:?}",
-                anyhow::Error::new(e).context("failed to recv")
-            );
-            thread::sleep(std::time::Duration::from_secs(2));
-            continue;
-        }
-
-        match buf {
-            [ipc_commands::SHOW] => {}
-            [command] => {
-                eprintln!("Warning: received unknown command {command}");
-                continue;
-            }
-        }
+        daemon.wait();
     }
 
     Ok(())
@@ -308,6 +286,8 @@ mod prompt {
     use std::process;
 }
 
+mod daemon;
+
 use auth::AccessToken;
 mod auth;
 
@@ -329,6 +309,7 @@ use crate::cache::CacheRef;
 use anyhow::Context as _;
 use arboard::Clipboard;
 use client::Client;
+use daemon::Daemon;
 use directories::ProjectDirs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
