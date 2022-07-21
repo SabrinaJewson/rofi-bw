@@ -44,7 +44,9 @@ impl BwIcons {
                         .decode()
                         .context("failed to decode image")?;
 
-                    return rayon::scope(|_| CairoImageData::from_image(&image));
+                    let image = rayon::scope(|_| CairoImageData::from_image(&image))?;
+
+                    return Ok(Some(image));
                 }
 
                 let runtime = tokio::runtime::Handle::current();
@@ -53,7 +55,11 @@ impl BwIcons {
                     anyhow::Ok((icon, host))
                 });
                 let (download_icon::Downloaded { bytes, expires }, host) =
-                    runtime.block_on(handle).unwrap()?;
+                    match runtime.block_on(handle) {
+                        Ok(res) => res?,
+                        Err(e) if e.is_cancelled() => return Ok(None),
+                        Err(e) => panic!("inner task panicked: {e:?}"),
+                    };
 
                 let mut cairo_image: Option<anyhow::Result<_>> = None;
                 rayon::in_place_scope(|s| {
@@ -68,7 +74,7 @@ impl BwIcons {
 
                     disk_cache.store(&*host, &*bytes, expires)
                 })?;
-                cairo_image.unwrap()
+                Ok(Some(cairo_image.unwrap()?))
             }
         });
 
@@ -80,7 +86,10 @@ impl BwIcons {
 
         if let Icon::Waiting(handle) = icon {
             let surface_result: anyhow::Result<_> = self.runtime.block_on(async {
-                let image_data = handle.await.unwrap()?;
+                let image_data = match handle.await.unwrap()? {
+                    Some(image_data) => image_data,
+                    None => return Ok(None),
+                };
 
                 let surface = cairo::ImageSurface::create_for_data(
                     image_data.data,
@@ -91,11 +100,12 @@ impl BwIcons {
                 )
                 .context("failed to create image surface")?;
 
-                Ok(surface)
+                Ok(Some(surface))
             });
 
             *icon = Icon::Complete(match surface_result {
-                Ok(surface) => Some(SyncWrapper::new(surface)),
+                Ok(Some(surface)) => Some(SyncWrapper::new(surface)),
+                Ok(None) => None,
                 Err(e) => {
                     let context = format!("failed to retrieve icon {host}");
                     eprintln!("Warning: {:?}", e.context(context));
@@ -112,7 +122,7 @@ impl BwIcons {
 }
 
 enum Icon {
-    Waiting(tokio::task::JoinHandle<anyhow::Result<CairoImageData>>),
+    Waiting(tokio::task::JoinHandle<anyhow::Result<Option<CairoImageData>>>),
     Complete(Option<SyncWrapper<cairo::ImageSurface>>),
 }
 
