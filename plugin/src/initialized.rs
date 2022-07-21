@@ -44,7 +44,19 @@ impl Initialized {
 
             let host = (|| {
                 let url = login.uri.as_ref()?.decrypt(&key).ok()?;
-                let url = Url::parse(&*url).ok()?;
+                let url = url.trim();
+                // Algorithm taken from:
+                // https://github.com/bitwarden/clients/blob/9eefb4ad169dc1ca08073922c78faafd12cb2752/libs/common/src/misc/utils.ts#L339
+                let url = Url::parse(&*url).ok().or_else(|| {
+                    if url.starts_with("http://")
+                        || url.starts_with("https://")
+                        || !url.contains(".")
+                    {
+                        return None;
+                    }
+                    Url::parse(&*format!("http://{url}")).ok()
+                })?;
+
                 match url.host()? {
                     url::Host::Domain(domain) => Some(<Arc<str>>::from(domain)),
                     _ => None,
