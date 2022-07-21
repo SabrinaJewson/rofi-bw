@@ -36,8 +36,11 @@ fn load_inner(dir_path: &Path, key: &Key) -> anyhow::Result<Option<Cache>> {
     let file_path = dir_path.join(CACHE_FILE_NAME);
     let data = match fs::read(&*file_path) {
         Ok(data) => data,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e).context(format!("failed to read {file_path:?}")),
+        Err(fs::read::Error {
+            kind: fs::read::ErrorKind::Open(e),
+            ..
+        }) if e.source.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
     };
 
     let data = match &*data {
@@ -116,8 +119,7 @@ fn store_inner(dir_path: &Path, key: &Key, data: CacheRef<'_, '_>) -> anyhow::Re
         .expect("encryption cannot fail as `Vec`s are infallible");
     res.extend_from_slice(&ciphertext);
 
-    fs_overwrite::overwrite(dir_path.join(CACHE_FILE_NAME), res)
-        .context("failed to write cache")?;
+    fs::overwrite::with(dir_path.join(CACHE_FILE_NAME), &*res).context("failed to write cache")?;
 
     Ok(())
 }
@@ -155,13 +157,12 @@ impl<'source> Reader<'source> {
 
 use crate::auth::Pbkdf2Algorithm;
 use crate::auth::Prelogin;
-use crate::fs_overwrite;
 use aead::Aead;
 use aead::NewAead;
 use anyhow::Context as _;
 use argon2::Argon2;
 use chacha20poly1305::XChaCha20Poly1305;
-use std::fs;
+use rofi_bw_common::fs;
 use std::io;
 use std::num::NonZeroU32;
 use std::path::Path;

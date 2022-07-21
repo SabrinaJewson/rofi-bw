@@ -1,16 +1,19 @@
 pub(crate) struct Data {
     pub(crate) email: Option<String>,
     pub(crate) device_id: Uuid,
-    path: PathBuf,
+    path: fs::PathBuf,
 }
 
 impl Data {
-    pub(crate) fn load(data_dir: &Path) -> anyhow::Result<Self> {
+    pub(crate) fn load(data_dir: &fs::Path) -> anyhow::Result<Self> {
         let path = data_dir.join("data");
 
         let bytes = match fs::read(&*path) {
             Ok(bytes) => bytes,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            Err(fs::read::Error {
+                kind: fs::read::ErrorKind::Open(e),
+                ..
+            }) if e.source.kind() == io::ErrorKind::NotFound => {
                 let this = Data {
                     email: None,
                     device_id: Uuid::new_v4(),
@@ -19,7 +22,7 @@ impl Data {
                 this.store()?;
                 return Ok(this);
             }
-            Err(e) => return Err(e).context(format!("failed to read {}", path.display())),
+            Err(e) => return Err(e.into()),
         };
 
         #[derive(Deserialize)]
@@ -60,9 +63,7 @@ impl Data {
         .serialize(&mut toml::Serializer::new(&mut buf))
         .unwrap();
 
-        fs_overwrite::overwrite(&*self.path, buf)
-            .with_context(|| format!("failed to write {}", self.path.display()))
-            .context("failed to write data file")?;
+        fs::overwrite::with(&*self.path, buf.as_bytes()).context("failed to write data file")?;
 
         Ok(())
     }
@@ -74,12 +75,9 @@ mod versions {
     pub(crate) const V0: u8 = b'\0';
 }
 
-use crate::fs_overwrite;
 use anyhow::Context as _;
+use rofi_bw_common::fs;
 use serde::Deserialize;
 use serde::Serialize;
-use std::fs;
 use std::io;
-use std::path::Path;
-use std::path::PathBuf;
 use uuid::Uuid;

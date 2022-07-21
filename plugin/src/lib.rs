@@ -46,7 +46,6 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         let res = (|| {
             let pipe = pipe.insert(get_pipe()?);
             let handshake = ipc::handshake::read(pipe)?;
-            std::fs::write("/home/sabrina/data.json", &handshake.data).unwrap();
             let data =
                 serde_json::from_slice(&*handshake.data).context("failed to read vault data")?;
             Initialized::new(&handshake.master_key, data)
@@ -75,6 +74,13 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
 
     fn entry_content(&self, line: usize) -> rofi_mode::String {
         self.entry_content(line).into()
+    }
+
+    fn entry_icon(&mut self, line: usize, _height: u32) -> Option<cairo::Surface> {
+        match &mut self.state {
+            State::Initialized(initialized) => initialized.entry_icon(line),
+            State::Errored(_) => panic!("this mode has no entries"),
+        }
     }
 
     fn react(
@@ -216,6 +222,9 @@ mod initialized;
 use errored::Errored;
 mod errored;
 
+use bw_icons::BwIcons;
+mod bw_icons;
+
 mod data;
 
 use cipher_string::CipherString;
@@ -227,8 +236,11 @@ mod symmetric_key;
 use base64_decode_array::base64_decode_array;
 mod base64_decode_array;
 
+mod disk_cache;
+
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
+use rofi_mode::cairo;
 use std::io::BufWriter;
 use std::io::Write;
 use std::os::unix::net::UnixStream;

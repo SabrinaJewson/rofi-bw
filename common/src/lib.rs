@@ -59,3 +59,5 @@ pub mod keybinds {
 
     use crate::ipc::MenuRequest;
 }
+
+pub mod fs;

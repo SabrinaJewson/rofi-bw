@@ -313,8 +313,6 @@ mod config;
 use data::Data;
 mod data;
 
-mod fs_overwrite;
-
 mod menu;
 
 use error_reporting::report_error;

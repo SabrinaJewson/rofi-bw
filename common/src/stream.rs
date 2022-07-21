@@ -5,13 +5,6 @@ pub trait Writer {
     fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error>;
 }
 
-impl<W: ?Sized + io::Write> Writer for W {
-    type Error = io::Error;
-    fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        self.write_all(buf)
-    }
-}
-
 pub trait Reader {
     type Error;
     fn read(&mut self, buf: &mut [u8]) -> Result<(), Self::Error>;
@@ -24,6 +17,13 @@ pub trait Reader {
         let mut bytes = vec![0; n].into_boxed_slice();
         self.read(&mut bytes)?;
         Ok(bytes)
+    }
+}
+
+impl<W: ?Sized + io::Write> Writer for W {
+    type Error = io::Error;
+    fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
+        self.write_all(buf)
     }
 }
 
