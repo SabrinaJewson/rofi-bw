@@ -1,17 +1,23 @@
 #[derive(bincode::Encode, bincode::BorrowDecode)]
-pub(crate) enum Command<'display> {
-    ShowMenu {
-        /// The value of the `$DISPLAY` environment variable.
-        display: &'display str,
-    },
+pub(crate) enum Command<'display, 'filter> {
+    ShowMenu(ShowMenu<'display, 'filter>),
     Quit,
 }
 
-pub(crate) fn invoke(runtime_dir: &Path, command: &Command<'_>) -> anyhow::Result<bool> {
+#[derive(Clone, Copy, bincode::Encode, bincode::BorrowDecode)]
+pub(crate) struct ShowMenu<'display, 'filter> {
+    /// The value of the `$DISPLAY` environment variable.
+    pub(crate) display: &'display str,
+
+    /// The initial filter to start Rofi with.
+    pub(crate) filter: &'filter str,
+}
+
+pub(crate) fn invoke(runtime_dir: &Path, command: Command<'_, '_>) -> anyhow::Result<bool> {
     invoke_inner(runtime_dir, command).context("failed to invoke daemon")
 }
 
-fn invoke_inner(runtime_dir: &Path, command: &Command<'_>) -> anyhow::Result<bool> {
+fn invoke_inner(runtime_dir: &Path, command: Command<'_, '_>) -> anyhow::Result<bool> {
     let socket_path = runtime_dir.join(SOCKET_FILE_NAME);
 
     let socket = UnixDatagram::unbound().context("failed to create client socket")?;
@@ -63,7 +69,7 @@ impl Daemon {
         })
     }
 
-    pub(crate) fn wait(&mut self) -> Command<'_> {
+    pub(crate) fn wait(&mut self) -> Command<'_, '_> {
         if !self.should_wait {
             return Command::Quit;
         }
@@ -86,7 +92,7 @@ impl Daemon {
                 }
             };
 
-            polonius!(|buf| -> Command<'polonius> {
+            polonius!(|buf| -> Command<'polonius, 'polonius> {
                 match bincode::decode_from_slice(&buf[..bytes], bincode_config()) {
                     Ok((command, _)) => polonius_return!(command),
                     Err(e) => {

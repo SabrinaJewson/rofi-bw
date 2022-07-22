@@ -79,6 +79,9 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
 struct RunArgs {
     #[clap(flatten)]
     build_args: BuildArgs,
+
+    #[clap(last(true))]
+    rest: Vec<OsString>,
 }
 
 fn run(args: RunArgs) -> anyhow::Result<()> {
@@ -86,6 +89,7 @@ fn run(args: RunArgs) -> anyhow::Result<()> {
 
     let status = process::Command::new(PathBuf::from_iter(["build", "rofi-bw"]))
         .env("ROFI_BW_LIB_DIR", PathBuf::from_iter(["build", "lib"]))
+        .args(args.rest)
         .status()
         .context("failed to spawn rofi-bw")?;
 
@@ -97,6 +101,7 @@ fn run(args: RunArgs) -> anyhow::Result<()> {
 use anyhow::Context as _;
 use clap::Parser as _;
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;

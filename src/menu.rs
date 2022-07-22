@@ -3,6 +3,7 @@ pub(crate) fn run(
     handshake: &ipc::Handshake<&MasterKey, &[u8]>,
     rofi_options: &config::RofiOptions,
     display: &str,
+    filter: &str,
 ) -> anyhow::Result<ipc::MenuRequest<String>> {
     let (parent_stream, child_stream) =
         UnixStream::pair().context("failed to create IPC channel")?;
@@ -14,6 +15,9 @@ pub(crate) fn run(
 
     apply_options(&mut rofi, rofi_options);
     rofi.arg("-display").arg(display);
+    if !filter.is_empty() {
+        rofi.arg("-filter").arg(filter);
+    }
 
     let mut arg_name_buf = String::new();
     for (i, keybind) in rofi_bw_common::KEYBINDS.iter().enumerate() {

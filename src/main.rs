@@ -15,15 +15,35 @@
 )]
 
 fn main() -> process::ExitCode {
-    if let Err(e) = try_main() {
+    if let Err(e) = try_main(Args::parse()) {
         report_error(e.as_ref());
         return process::ExitCode::FAILURE;
     }
     process::ExitCode::SUCCESS
 }
 
+/// Rofi interface to Bitwarden.
+#[derive(clap::Parser)]
+struct Args {
+    /// The initial filter to use in Rofi
+    #[clap(short, long, default_value = "")]
+    filter: String,
+
+    /// Path to the config file; defaults to `$XDG_CONFIG_DIR/rofi-bw/config.toml`.
+    ///
+    /// Note that this will not be taken into account if an instance of rofi-bw is already running.
+    #[clap(short, long)]
+    config_file: Option<PathBuf>,
+}
+
+// TODO: This function is too big, I need to refactor it
 #[allow(clippy::too_many_lines)]
-fn try_main() -> anyhow::Result<()> {
+fn try_main(
+    Args {
+        filter,
+        config_file,
+    }: Args,
+) -> anyhow::Result<()> {
     let lib_dir = env::var_os("ROFI_BW_LIB_DIR")
         .unwrap_or_else(|| "/usr/lib/rofi-bw:/usr/local/lib/rofi-bw".into());
 
@@ -33,19 +53,24 @@ fn try_main() -> anyhow::Result<()> {
         .runtime_dir()
         .context("failed to locate runtime directory")?;
 
-    let mut display = &*env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
+    let display = env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
 
-    if daemon::invoke(runtime_dir, &daemon::Command::ShowMenu { display })? {
+    let mut command = daemon::ShowMenu {
+        display: &*display,
+        filter: &*filter,
+    };
+    if daemon::invoke(runtime_dir, daemon::Command::ShowMenu(command))? {
         return Ok(());
     }
 
     // Having failed to invoke an existing daemon, we must now become the daemon.
 
+    let config_path = config_file.unwrap_or_else(|| project_dirs.config_dir().join("config.toml"));
     let Config {
         auto_lock,
         copy_notification,
         rofi_options,
-    } = config::load(project_dirs.config_dir())?;
+    } = config::load(&*config_path)?;
 
     let mut daemon = Daemon::bind(runtime_dir, auto_lock)?;
 
@@ -98,46 +123,52 @@ fn try_main() -> anyhow::Result<()> {
                     notify_copy: copy_notification,
                 };
 
-                Ok(
-                    match menu::run(&*lib_dir, &handshake, &rofi_options, &*display)? {
-                        ipc::MenuRequest::Copy { data, notification } => {
-                            clipboard
-                                .set_text(data)
-                                .context("failed to set clipboard content")?;
+                let res = menu::run(
+                    &*lib_dir,
+                    &handshake,
+                    &rofi_options,
+                    command.display,
+                    command.filter,
+                )?;
 
-                            if let Some(notification) = notification {
-                                show_notification(notification);
+                Ok(match res {
+                    ipc::MenuRequest::Copy { data, notification } => {
+                        clipboard
+                            .set_text(data)
+                            .context("failed to set clipboard content")?;
+
+                        if let Some(notification) = notification {
+                            show_notification(notification);
+                        }
+
+                        AfterMenu::ContinueServing
+                    }
+                    ipc::MenuRequest::Sync => {
+                        // Force a token refresh. This is needed to make sure that our session
+                        // hasn't expired; if it has, it’s likely the master password or KDF
+                        // iterations have changed, and so we need to enter the master password
+                        // again.
+                        client.token_source.token.access_token.clear();
+
+                        match client.sync() {
+                            Ok(new_account_data) => {
+                                account_data = new_account_data;
+                                AfterMenu::ShowMenuAgain
                             }
-
-                            AfterMenu::ContinueServing
+                            Err(client::SyncError::Token(auth::RefreshError::SessionExpired(
+                                _,
+                            ))) => AfterMenu::UnlockAgain,
+                            Err(e) => return Err(e.into()),
                         }
-                        ipc::MenuRequest::Sync => {
-                            // Force a token refresh. This is needed to make sure that our session
-                            // hasn't expired; if it has, it’s likely the master password or KDF
-                            // iterations have changed, and so we need to enter the master password
-                            // again.
-                            client.token_source.token.access_token.clear();
-
-                            match client.sync() {
-                                Ok(new_account_data) => {
-                                    account_data = new_account_data;
-                                    AfterMenu::ShowMenuAgain
-                                }
-                                Err(client::SyncError::Token(
-                                    auth::RefreshError::SessionExpired(_),
-                                )) => AfterMenu::UnlockAgain,
-                                Err(e) => return Err(e.into()),
-                            }
-                        }
-                        ipc::MenuRequest::Lock => AfterMenu::StopServing,
-                        ipc::MenuRequest::LogOut => {
-                            data.email = None;
-                            data.store()?;
-                            AfterMenu::UnlockAgain
-                        }
-                        ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
-                    },
-                )
+                    }
+                    ipc::MenuRequest::Lock => AfterMenu::StopServing,
+                    ipc::MenuRequest::LogOut => {
+                        data.email = None;
+                        data.store()?;
+                        AfterMenu::UnlockAgain
+                    }
+                    ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
+                })
             })();
 
             let after_menu = res.unwrap_or_else(|e| {
@@ -153,9 +184,7 @@ fn try_main() -> anyhow::Result<()> {
             }
 
             match daemon.wait() {
-                daemon::Command::ShowMenu {
-                    display: new_display,
-                } => display = new_display,
+                daemon::Command::ShowMenu(new_command) => command = new_command,
                 daemon::Command::Quit => return Ok(()),
             }
         }
@@ -366,6 +395,7 @@ mod error_reporting;
 use crate::cache::CacheRef;
 use anyhow::Context as _;
 use arboard::Clipboard;
+use clap::Parser;
 use client::Client;
 use config::Config;
 use daemon::Daemon;
@@ -374,6 +404,7 @@ use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
 use std::env;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process;
 use uuid::Uuid;
 use zeroize::Zeroizing;

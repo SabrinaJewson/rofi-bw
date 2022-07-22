@@ -1,10 +1,8 @@
-pub(crate) fn load(config_dir: &fs::Path) -> anyhow::Result<Config> {
-    load_inner(config_dir).context("failed to load config file")
+pub(crate) fn load(path: &fs::Path) -> anyhow::Result<Config> {
+    load_inner(path).context("failed to load config file")
 }
 
-fn load_inner(config_dir: &fs::Path) -> anyhow::Result<Config> {
-    let path = config_dir.join("config.toml");
-
+fn load_inner(path: &fs::Path) -> anyhow::Result<Config> {
     let bytes = match fs::read(&*path) {
         Ok(bytes) => bytes,
         Err(fs::read::Error {
