@@ -1479,7 +1479,6 @@ name = "rofi-bw-common"
 version = "0.0.0"
 dependencies = [
  "bincode",
- "directories",
  "rand",
  "zeroize",
 ]

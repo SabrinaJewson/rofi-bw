@@ -21,6 +21,7 @@ fn main() -> process::ExitCode {
     process::ExitCode::SUCCESS
 }
 
+#[allow(clippy::too_many_lines)]
 fn try_main() -> anyhow::Result<()> {
     let lib_dir = env::var_os("ROFI_BW_LIB_DIR")
         .unwrap_or_else(|| "/usr/lib/rofi-bw:/usr/local/lib/rofi-bw".into());
