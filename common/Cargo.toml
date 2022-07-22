@@ -6,6 +6,5 @@ publish = false
 
 [dependencies]
 bincode = "2.0.0-rc.1"
-directories = "4.0.1"
 rand = "0.8.5"
 zeroize = { version = "1.5.6", features = ["std"] }
