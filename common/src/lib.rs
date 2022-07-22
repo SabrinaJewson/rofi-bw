@@ -23,12 +23,31 @@ mod master_key {
         }
     }
 
+    impl bincode::Encode for MasterKey {
+        fn encode<E: bincode::enc::Encoder>(
+            &self,
+            encoder: &mut E,
+        ) -> Result<(), bincode::error::EncodeError> {
+            encoder.writer().write(&*self.0)
+        }
+    }
+
+    impl bincode::Decode for MasterKey {
+        fn decode<D: bincode::de::Decoder>(
+            decoder: &mut D,
+        ) -> Result<Self, bincode::error::DecodeError> {
+            let mut this = Self::zeroed();
+            decoder.reader().read(&mut *this.0)?;
+            Ok(this)
+        }
+    }
+
+    use bincode::de::read::Reader as _;
+    use bincode::enc::write::Writer as _;
     use zeroize::Zeroizing;
 }
 
 pub mod ipc;
-
-pub mod stream;
 
 pub use keybinds::{Keybind, KEYBINDS};
 pub mod keybinds {

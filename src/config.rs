@@ -2,6 +2,13 @@
 pub(crate) struct Config {
     #[serde(default)]
     pub(crate) auto_lock: AutoLock,
+
+    #[serde(default = "default_copy_notification")]
+    pub(crate) copy_notification: bool,
+}
+
+fn default_copy_notification() -> bool {
+    true
 }
 
 pub(crate) fn load(config_dir: &Path) -> anyhow::Result<Config> {

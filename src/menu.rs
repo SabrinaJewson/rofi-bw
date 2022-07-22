@@ -1,9 +1,8 @@
 pub(crate) fn run(
     lib_dir: &OsStr,
-    master_key: &MasterKey,
-    data: &str,
-) -> anyhow::Result<ipc::MenuRequest<Box<str>>> {
-    let (mut parent_stream, child_stream) =
+    handshake: &ipc::Handshake<&MasterKey, &[u8]>,
+) -> anyhow::Result<ipc::MenuRequest<String>> {
+    let (parent_stream, child_stream) =
         UnixStream::pair().context("failed to create IPC channel")?;
 
     let mut rofi = process::Command::new("rofi");
@@ -29,10 +28,12 @@ pub(crate) fn run(
     // Capture IPC errors, because status code errors should take precedence
     // (and we also don't want a zombie process).
     let ipc_result: anyhow::Result<_> = (|| {
-        ipc::handshake::write(&mut parent_stream, master_key, data.as_bytes())?;
+        let mut pipe = BufWriter::new(parent_stream);
+        ipc::handshake::write(&mut pipe, handshake)?;
+        let pipe = pipe.into_inner()?;
 
-        let mut pipe = BufReader::new(parent_stream);
-        Ok(ipc::MenuRequest::read(&mut pipe)?)
+        let mut pipe = BufReader::new(pipe);
+        Ok(ipc::menu_request::read(&mut pipe)?)
     })();
 
     let status = rofi.wait().context("failed to wait on rofi")?;
@@ -65,6 +66,7 @@ use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::io;
 use std::io::BufReader;
+use std::io::BufWriter;
 use std::os::raw::c_int;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;

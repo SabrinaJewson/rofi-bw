@@ -9,12 +9,12 @@ impl<Dir: Borrow<fs::Path>> DiskCache<Dir> {
         Self { dir }
     }
 
-    pub(crate) fn load(&self, key: &str) -> anyhow::Result<Option<fs::File<fs::PathBuf>>> {
+    pub(crate) fn load(&self, key: &str) -> anyhow::Result<Option<fs::PathBuf>> {
         self.load_inner(key)
             .with_context(|| format!("failed to load cache file {key}"))
     }
 
-    fn load_inner(&self, key: &str) -> anyhow::Result<Option<fs::File<fs::PathBuf>>> {
+    fn load_inner(&self, key: &str) -> anyhow::Result<Option<fs::PathBuf>> {
         let dir = self.dir.borrow().join(key);
         let expires_path = dir.join("expires");
 
@@ -37,9 +37,7 @@ impl<Dir: Borrow<fs::Path>> DiskCache<Dir> {
             return Ok(None);
         }
 
-        let file = fs::file::open::read_only(dir.join("data"))?;
-
-        Ok(Some(file))
+        Ok(Some(dir.join("data")))
     }
 
     pub(crate) fn store(

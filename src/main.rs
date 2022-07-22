@@ -37,7 +37,10 @@ fn try_main() -> anyhow::Result<()> {
 
     // Having failed to invoke an existing daemon, we must now become the daemon.
 
-    let Config { auto_lock } = config::load(project_dirs.config_dir())?;
+    let Config {
+        auto_lock,
+        copy_notification,
+    } = config::load(project_dirs.config_dir())?;
 
     let mut daemon = Daemon::bind(runtime_dir, auto_lock)?;
 
@@ -84,11 +87,22 @@ fn try_main() -> anyhow::Result<()> {
             }
 
             let res: anyhow::Result<_> = (|| {
-                Ok(match menu::run(&*lib_dir, &master_key, &*account_data)? {
-                    ipc::MenuRequest::Copy(data) => {
+                let handshake = ipc::Handshake {
+                    master_key: &master_key,
+                    data: account_data.as_bytes(),
+                    notify_copy: copy_notification,
+                };
+
+                Ok(match menu::run(&*lib_dir, &handshake)? {
+                    ipc::MenuRequest::Copy { data, notification } => {
                         clipboard
-                            .set_text(String::from(data))
+                            .set_text(data)
                             .context("failed to set clipboard content")?;
+
+                        if let Some(notification) = notification {
+                            show_notification(notification);
+                        }
+
                         AfterMenu::ContinueServing
                     }
                     ipc::MenuRequest::Sync => {
@@ -297,6 +311,28 @@ mod prompt {
     use anyhow::Context as _;
     use std::io::Read;
     use std::process;
+}
+
+use show_notification::show_notification;
+mod show_notification {
+    pub(crate) fn show_notification(notification: ipc::menu_request::Notification) {
+        if let Err(e) = inner(notification) {
+            eprintln!("Warning: {}", e.context("failed to show notification"));
+        }
+    }
+    fn inner(notification: ipc::menu_request::Notification) -> anyhow::Result<()> {
+        let mut builder = notify_rust::Notification::new();
+        builder.icon("bitwarden");
+        builder.summary = notification.title;
+        if let Some(image) = notification.image {
+            builder.hint(notify_rust::Hint::ImagePath(image));
+        }
+        builder.show().context("failed to show notification")?;
+        Ok(())
+    }
+
+    use anyhow::Context as _;
+    use rofi_bw_common::ipc;
 }
 
 mod daemon;

@@ -1,5 +1,6 @@
 pub(crate) fn report_error(error: &(dyn 'static + Error)) {
     let mut notification = notify_rust::Notification::new();
+    notification.icon("bitwarden");
     notification.urgency(notify_rust::Urgency::Critical);
     notification.summary = format!("Error: {error}");
 

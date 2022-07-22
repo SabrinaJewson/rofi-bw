@@ -44,11 +44,14 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         let mut pipe = None;
 
         let res = (|| {
-            let pipe = pipe.insert(get_pipe()?);
-            let handshake = ipc::handshake::read(pipe)?;
-            let data =
-                serde_json::from_slice(&*handshake.data).context("failed to read vault data")?;
-            Initialized::new(&handshake.master_key, data)
+            let pipe = BufReader::new(pipe.insert(get_pipe()?));
+            let ipc::Handshake {
+                master_key,
+                data,
+                notify_copy,
+            } = ipc::handshake::read(pipe)?;
+            let data = serde_json::from_slice(&*data).context("failed to read vault data")?;
+            Initialized::new(&master_key, data, notify_copy)
         })();
 
         let state = res
@@ -90,12 +93,12 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
     ) -> rofi_mode::Action {
         match event {
             rofi_mode::Event::Cancel { selected: _ } => {
-                request(&mut self.pipe, ipc::MenuRequest::Exit);
+                request(&mut self.pipe, &ipc::MenuRequest::Exit);
                 rofi_mode::Action::Exit
             }
             rofi_mode::Event::Ok { alt: _, selected } => match &mut self.state {
                 State::Initialized(initialized) => {
-                    request(&mut self.pipe, initialized.ok(selected));
+                    request(&mut self.pipe, &initialized.ok(selected));
                     rofi_mode::Action::Exit
                 }
                 State::Errored(_) => panic!("this mode has no entries"),
@@ -115,7 +118,7 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                     Some(keybind) => keybind,
                     None => return rofi_mode::Action::Reload,
                 };
-                request(&mut self.pipe, keybind.action);
+                request(&mut self.pipe, &keybind.action);
                 rofi_mode::Action::Exit
             }
             rofi_mode::Event::CustomInput {
@@ -203,10 +206,10 @@ mod get_pipe {
     use std::sync::atomic::AtomicBool;
 }
 
-fn request(pipe: &mut Option<BufWriter<UnixStream>>, request: ipc::MenuRequest<&str>) {
+fn request(pipe: &mut Option<BufWriter<UnixStream>>, request: &ipc::MenuRequest<&str>) {
     if let Some(pipe) = pipe {
         let res = (|| {
-            request.write(pipe)?;
+            ipc::menu_request::write(&mut *pipe, request)?;
             pipe.flush().context("failed to flush pipe")?;
             anyhow::Ok(())
         })();
@@ -241,6 +244,7 @@ mod disk_cache;
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_mode::cairo;
+use std::io::BufReader;
 use std::io::BufWriter;
 use std::io::Write;
 use std::os::unix::net::UnixStream;

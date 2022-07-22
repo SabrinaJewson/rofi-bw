@@ -1,6 +1,7 @@
 pub(crate) struct Initialized {
     entries: Vec<Entry>,
     icons: BwIcons,
+    notify_copy: bool,
 }
 
 struct Entry {
@@ -11,11 +12,16 @@ struct Entry {
 }
 
 impl Initialized {
-    pub(crate) fn new(master_key: &MasterKey, data: Data) -> anyhow::Result<Self> {
+    pub(crate) fn new(
+        master_key: &MasterKey,
+        data: Data,
+        notify_copy: bool,
+    ) -> anyhow::Result<Self> {
         let mut icons = BwIcons::new()?;
 
         let key = data.profile.key.decrypt(master_key)?;
 
+        // TODO: Parallelize this
         let mut entries = Vec::new();
         for cipher in data.ciphers {
             if cipher.deleted_date.is_some() {
@@ -77,7 +83,11 @@ impl Initialized {
 
         entries.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
-        Ok(Self { entries, icons })
+        Ok(Self {
+            entries,
+            icons,
+            notify_copy,
+        })
     }
 
     pub(crate) const DISPLAY_NAME: &'static str = "bitwarden";
@@ -96,7 +106,18 @@ impl Initialized {
     }
 
     pub(crate) fn ok(&mut self, line: usize) -> ipc::MenuRequest<&str> {
-        ipc::MenuRequest::Copy(&**self.entries[line].password)
+        let entry = &self.entries[line];
+        ipc::MenuRequest::Copy {
+            data: &**entry.password,
+            notification: self.notify_copy.then(|| ipc::menu_request::Notification {
+                title: format!("copied {} password", entry.name),
+                image: entry
+                    .host
+                    .as_deref()
+                    .and_then(|host| self.icons.fs_path(host))
+                    .and_then(|path| path.into_os_string().into_string().ok()),
+            }),
+        }
     }
 }
 

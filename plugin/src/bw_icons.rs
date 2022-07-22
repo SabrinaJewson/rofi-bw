@@ -36,6 +36,8 @@ impl BwIcons {
             let http = self.http.clone();
             move || {
                 if let Some(image) = disk_cache.load(&*host)? {
+                    let image = fs::file::open::read_only(image)?;
+
                     let image = BufReader::new(image);
 
                     let image = image::io::Reader::new(image)
@@ -122,6 +124,10 @@ impl BwIcons {
             Icon::Waiting(_) => unreachable!(),
             Icon::Complete(surface) => surface.as_mut().map(|s| (**s.get_mut()).clone()),
         }
+    }
+
+    pub fn fs_path(&self, host: &str) -> Option<fs::PathBuf> {
+        self.disk_cache.load(host).ok().flatten()
     }
 }
 
