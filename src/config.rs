@@ -1,4 +1,5 @@
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Config {
     #[serde(default)]
     pub(crate) auto_lock: AutoLock,
