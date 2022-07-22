@@ -82,11 +82,15 @@ impl BwIcons {
     }
 
     pub fn get(&mut self, host: &str) -> Option<cairo::Surface> {
+        // TODO: notifications
+        // TODO: fix the theme problem…
         let icon = self.icons.get_mut(host).unwrap();
 
         if let Icon::Waiting(handle) = icon {
-            let surface_result: anyhow::Result<_> = self.runtime.block_on(async {
-                let image_data = match handle.await.unwrap()? {
+            let task_result = poll_future_once(handle)?;
+
+            let surface_result: anyhow::Result<_> = (|| {
+                let image_data = match task_result.unwrap()? {
                     Some(image_data) => image_data,
                     None => return Ok(None),
                 };
@@ -101,7 +105,7 @@ impl BwIcons {
                 .context("failed to create image surface")?;
 
                 Ok(Some(surface))
-            });
+            })();
 
             *icon = Icon::Complete(match surface_result {
                 Ok(Some(surface)) => Some(SyncWrapper::new(surface)),
@@ -233,6 +237,38 @@ mod sync_wrapper {
     }
 
     unsafe impl<T> Sync for SyncWrapper<T> {}
+}
+
+use poll_future_once::poll_future_once;
+mod poll_future_once {
+    pub(crate) fn poll_future_once<F: Future>(future: F) -> Option<F::Output> {
+        pin!(future);
+        let waker = NOOP_WAKER;
+        let cx = &mut task::Context::from_waker(&waker);
+        match future.poll(cx) {
+            Poll::Ready(val) => Some(val),
+            Poll::Pending => None,
+        }
+    }
+
+    use super::NOOP_WAKER;
+    use std::future::Future;
+    use std::task;
+    use std::task::Poll;
+    use tokio::pin;
+}
+
+use noop_waker::NOOP_WAKER;
+mod noop_waker {
+    pub(crate) const NOOP_WAKER: Waker = unsafe { mem::transmute(RAW) };
+    const RAW: RawWaker = RawWaker::new(ptr::null(), &VTABLE);
+    const VTABLE: RawWakerVTable = RawWakerVTable::new(|_| RAW, |_| {}, |_| {}, |_| {});
+
+    use std::mem;
+    use std::ptr;
+    use std::task::RawWaker;
+    use std::task::RawWakerVTable;
+    use std::task::Waker;
 }
 
 use crate::disk_cache::DiskCache;
