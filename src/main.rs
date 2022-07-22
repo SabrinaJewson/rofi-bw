@@ -10,7 +10,8 @@
 #![allow(
     clippy::single_char_pattern,
     clippy::struct_excessive_bools,
-    clippy::items_after_statements
+    clippy::items_after_statements,
+    clippy::match_bool
 )]
 
 fn main() -> process::ExitCode {
@@ -41,6 +42,7 @@ fn try_main() -> anyhow::Result<()> {
     let Config {
         auto_lock,
         copy_notification,
+        rofi_options,
     } = config::load(project_dirs.config_dir())?;
 
     let mut daemon = Daemon::bind(runtime_dir, auto_lock)?;
@@ -94,7 +96,7 @@ fn try_main() -> anyhow::Result<()> {
                     notify_copy: copy_notification,
                 };
 
-                Ok(match menu::run(&*lib_dir, &handshake)? {
+                Ok(match menu::run(&*lib_dir, &handshake, &rofi_options)? {
                     ipc::MenuRequest::Copy { data, notification } => {
                         clipboard
                             .set_text(data)
