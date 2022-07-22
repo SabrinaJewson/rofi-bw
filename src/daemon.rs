@@ -1,12 +1,24 @@
-pub(crate) fn invoke(runtime_dir: &Path) -> anyhow::Result<bool> {
-    invoke_inner(runtime_dir).context("failed to invoke daemon")
+#[derive(bincode::Encode, bincode::BorrowDecode)]
+pub(crate) enum Command<'display> {
+    ShowMenu {
+        /// The value of the `$DISPLAY` environment variable.
+        display: &'display str,
+    },
+    Quit,
 }
 
-fn invoke_inner(runtime_dir: &Path) -> anyhow::Result<bool> {
+pub(crate) fn invoke(runtime_dir: &Path, command: &Command<'_>) -> anyhow::Result<bool> {
+    invoke_inner(runtime_dir, command).context("failed to invoke daemon")
+}
+
+fn invoke_inner(runtime_dir: &Path, command: &Command<'_>) -> anyhow::Result<bool> {
     let socket_path = runtime_dir.join(SOCKET_FILE_NAME);
 
     let socket = UnixDatagram::unbound().context("failed to create client socket")?;
-    match socket.send_to(&[commands::SHOW], socket_path) {
+
+    let command = bincode::encode_to_vec(command, bincode_config()).unwrap();
+
+    match socket.send_to(&*command, socket_path) {
         Ok(_) => Ok(true),
         Err(e)
             if [io::ErrorKind::NotFound, io::ErrorKind::ConnectionRefused].contains(&e.kind()) =>
@@ -19,6 +31,7 @@ fn invoke_inner(runtime_dir: &Path) -> anyhow::Result<bool> {
 
 pub(crate) struct Daemon {
     socket: UnixDatagram,
+    buf: Box<[u8]>,
     should_wait: bool,
 }
 
@@ -45,52 +58,60 @@ impl Daemon {
 
         Ok(Self {
             socket,
+            buf: vec![0; 8192].into_boxed_slice(),
             should_wait,
         })
     }
 
-    pub(crate) fn wait(&mut self) -> Event {
+    pub(crate) fn wait(&mut self) -> Command<'_> {
         if !self.should_wait {
-            return Event::Timeout;
+            return Command::Quit;
         }
 
-        let mut buf = [0; 1];
+        let mut buf = &mut *self.buf;
 
         loop {
-            if let Err(e) = self.socket.recv(&mut buf) {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    break Event::Timeout;
+            let bytes = match self.socket.recv(buf) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::WouldBlock {
+                        break Command::Quit;
+                    }
+                    eprintln!(
+                        "Warning: {:?}",
+                        anyhow::Error::new(e).context("failed to recv")
+                    );
+                    thread::sleep(std::time::Duration::from_secs(2));
+                    continue;
                 }
-                eprintln!(
-                    "Warning: {:?}",
-                    anyhow::Error::new(e).context("failed to recv")
-                );
-                thread::sleep(std::time::Duration::from_secs(2));
-                continue;
-            }
+            };
 
-            match buf {
-                [commands::SHOW] => break Event::ShowMenu,
-                [command] => eprintln!("Warning: received unknown command {command}"),
-            }
+            polonius!(|buf| -> Command<'polonius> {
+                match bincode::decode_from_slice(&buf[..bytes], bincode_config()) {
+                    Ok((command, _)) => polonius_return!(command),
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: {:?}",
+                            anyhow!(e).context("failed to deserialize command")
+                        );
+                    }
+                }
+            });
         }
     }
 }
 
-pub(crate) enum Event {
-    ShowMenu,
-    Timeout,
-}
-
 const SOCKET_FILE_NAME: &str = "rofi-bw-session";
 
-mod commands {
-    /// Show the password chooser menu
-    pub(crate) const SHOW: u8 = 0;
+fn bincode_config() -> impl bincode::config::Config {
+    bincode::config::standard()
 }
 
 use crate::config::AutoLock;
+use anyhow::anyhow;
 use anyhow::Context as _;
+use polonius_the_crab::polonius;
+use polonius_the_crab::polonius_return;
 use std::fs;
 use std::io;
 use std::os::unix::net::UnixDatagram;

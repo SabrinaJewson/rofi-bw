@@ -33,7 +33,9 @@ fn try_main() -> anyhow::Result<()> {
         .runtime_dir()
         .context("failed to locate runtime directory")?;
 
-    if daemon::invoke(runtime_dir)? {
+    let mut display = &*env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
+
+    if daemon::invoke(runtime_dir, &daemon::Command::ShowMenu { display })? {
         return Ok(());
     }
 
@@ -96,44 +98,46 @@ fn try_main() -> anyhow::Result<()> {
                     notify_copy: copy_notification,
                 };
 
-                Ok(match menu::run(&*lib_dir, &handshake, &rofi_options)? {
-                    ipc::MenuRequest::Copy { data, notification } => {
-                        clipboard
-                            .set_text(data)
-                            .context("failed to set clipboard content")?;
+                Ok(
+                    match menu::run(&*lib_dir, &handshake, &rofi_options, &*display)? {
+                        ipc::MenuRequest::Copy { data, notification } => {
+                            clipboard
+                                .set_text(data)
+                                .context("failed to set clipboard content")?;
 
-                        if let Some(notification) = notification {
-                            show_notification(notification);
-                        }
-
-                        AfterMenu::ContinueServing
-                    }
-                    ipc::MenuRequest::Sync => {
-                        // Force a token refresh. This is needed to make sure that our session
-                        // hasn't expired; if it has, it’s likely the master password or KDF
-                        // iterations have changed, and so we need to enter the master password
-                        // again.
-                        client.token_source.token.access_token.clear();
-
-                        match client.sync() {
-                            Ok(new_account_data) => {
-                                account_data = new_account_data;
-                                AfterMenu::ShowMenuAgain
+                            if let Some(notification) = notification {
+                                show_notification(notification);
                             }
-                            Err(client::SyncError::Token(auth::RefreshError::SessionExpired(
-                                _,
-                            ))) => AfterMenu::UnlockAgain,
-                            Err(e) => return Err(e.into()),
+
+                            AfterMenu::ContinueServing
                         }
-                    }
-                    ipc::MenuRequest::Lock => AfterMenu::StopServing,
-                    ipc::MenuRequest::LogOut => {
-                        data.email = None;
-                        data.store()?;
-                        AfterMenu::UnlockAgain
-                    }
-                    ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
-                })
+                        ipc::MenuRequest::Sync => {
+                            // Force a token refresh. This is needed to make sure that our session
+                            // hasn't expired; if it has, it’s likely the master password or KDF
+                            // iterations have changed, and so we need to enter the master password
+                            // again.
+                            client.token_source.token.access_token.clear();
+
+                            match client.sync() {
+                                Ok(new_account_data) => {
+                                    account_data = new_account_data;
+                                    AfterMenu::ShowMenuAgain
+                                }
+                                Err(client::SyncError::Token(
+                                    auth::RefreshError::SessionExpired(_),
+                                )) => AfterMenu::UnlockAgain,
+                                Err(e) => return Err(e.into()),
+                            }
+                        }
+                        ipc::MenuRequest::Lock => AfterMenu::StopServing,
+                        ipc::MenuRequest::LogOut => {
+                            data.email = None;
+                            data.store()?;
+                            AfterMenu::UnlockAgain
+                        }
+                        ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
+                    },
+                )
             })();
 
             let after_menu = res.unwrap_or_else(|e| {
@@ -149,8 +153,10 @@ fn try_main() -> anyhow::Result<()> {
             }
 
             match daemon.wait() {
-                daemon::Event::ShowMenu => {}
-                daemon::Event::Timeout => return Ok(()),
+                daemon::Command::ShowMenu {
+                    display: new_display,
+                } => display = new_display,
+                daemon::Command::Quit => return Ok(()),
             }
         }
     }
