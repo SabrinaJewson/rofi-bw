@@ -84,7 +84,6 @@ impl BwIcons {
     }
 
     pub fn get(&mut self, host: &str) -> Option<cairo::Surface> {
-        // TODO: fix the theme problem…
         let icon = self.icons.get_mut(host).unwrap();
 
         if let Icon::Waiting(handle) = icon {
