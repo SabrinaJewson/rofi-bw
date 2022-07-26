@@ -11,7 +11,9 @@
     clippy::single_char_pattern,
     clippy::struct_excessive_bools,
     clippy::items_after_statements,
-    clippy::match_bool
+    clippy::match_bool,
+    clippy::match_wildcard_for_single_variants,
+    clippy::needless_pass_by_value
 )]
 
 fn main() -> process::ExitCode {
@@ -55,13 +57,14 @@ fn try_main(
 
     let display = env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
 
-    let mut command = daemon::ShowMenu {
-        display: &*display,
-        filter: &*filter,
-    };
-    if daemon::invoke(runtime_dir, daemon::Command::ShowMenu(command))? {
+    let request = daemon::Request::ShowMenu(daemon::ShowMenu { display, filter });
+    if daemon::invoke(runtime_dir, &request)? {
         return Ok(());
     }
+    let mut request = match request {
+        daemon::Request::ShowMenu(request) => request,
+        _ => unreachable!(),
+    };
 
     // Having failed to invoke an existing daemon, we must now become the daemon.
 
@@ -132,8 +135,8 @@ fn try_main(
                     &*lib_dir,
                     &handshake,
                     &rofi_options,
-                    command.display,
-                    command.filter,
+                    &*request.display,
+                    &*request.filter,
                 )?;
 
                 Ok(match res {
@@ -178,8 +181,8 @@ fn try_main(
             }
 
             match daemon.wait() {
-                daemon::Command::ShowMenu(new_command) => command = new_command,
-                daemon::Command::Quit => return Ok(()),
+                daemon::Request::ShowMenu(new) => request = new,
+                daemon::Request::Quit => return Ok(()),
             }
         }
     }

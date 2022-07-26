@@ -1248,12 +1248,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "polonius-the-crab"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2a69ee997a6282f8462abf1e0d8c38c965e968799e912b3bed8c9e8a28c2f9f"
-
-[[package]]
 name = "poly1305"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1471,7 +1465,6 @@ dependencies = [
  "libc",
  "notify-rust",
  "pbkdf2",
- "polonius-the-crab",
  "rand",
  "rofi-bw-common",
  "serde",
