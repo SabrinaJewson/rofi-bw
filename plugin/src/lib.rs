@@ -93,12 +93,12 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
     ) -> rofi_mode::Action {
         match event {
             rofi_mode::Event::Cancel { selected: _ } => {
-                request(&mut self.pipe, &ipc::MenuRequest::Exit);
+                send_request(&mut self.pipe, &ipc::MenuRequest::Exit);
                 rofi_mode::Action::Exit
             }
             rofi_mode::Event::Ok { alt: _, selected } => match &mut self.state {
                 State::Initialized(initialized) => {
-                    request(&mut self.pipe, &initialized.ok(selected));
+                    send_request(&mut self.pipe, &initialized.ok(selected));
                     rofi_mode::Action::Exit
                 }
                 State::Errored(_) => panic!("this mode has no entries"),
@@ -118,7 +118,14 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                     Some(keybind) => keybind,
                     None => return rofi_mode::Action::Reload,
                 };
-                request(&mut self.pipe, &keybind.action);
+                let request = match keybind.action {
+                    keybinds::Action::Sync => ipc::MenuRequest::Sync {
+                        filter: input.to_string(),
+                    },
+                    keybinds::Action::Lock => ipc::MenuRequest::Lock,
+                    keybinds::Action::LogOut => ipc::MenuRequest::LogOut,
+                };
+                send_request(&mut self.pipe, &request);
                 rofi_mode::Action::Exit
             }
             rofi_mode::Event::CustomInput {
@@ -206,7 +213,7 @@ mod get_pipe {
     use std::sync::atomic::AtomicBool;
 }
 
-fn request(pipe: &mut Option<BufWriter<UnixStream>>, request: &ipc::MenuRequest<&str>) {
+fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &ipc::MenuRequest<&str>) {
     if let Some(pipe) = pipe {
         let res = (|| {
             ipc::menu_request::write(&mut *pipe, request)?;
@@ -243,6 +250,7 @@ mod disk_cache;
 
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
+use rofi_bw_common::keybinds;
 use rofi_mode::cairo;
 use std::io::BufReader;
 use std::io::BufWriter;

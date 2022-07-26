@@ -53,7 +53,7 @@ pub use keybinds::{Keybind, KEYBINDS};
 pub mod keybinds {
     pub struct Keybind {
         pub combination: &'static str,
-        pub action: MenuRequest<&'static str>,
+        pub action: Action,
         pub description: &'static str,
     }
 
@@ -61,22 +61,26 @@ pub mod keybinds {
     pub const KEYBINDS: &[Keybind] = &[
         Keybind {
             combination: "Control+s",
-            action: MenuRequest::Sync,
+            action: Action::Sync,
             description: "Sync",
         },
         Keybind {
             combination: "Control+q",
-            action: MenuRequest::Lock,
+            action: Action::Lock,
             description: "Lock",
         },
         Keybind {
             combination: "Control+o",
-            action: MenuRequest::LogOut,
+            action: Action::LogOut,
             description: "Log out",
         },
     ];
 
-    use crate::ipc::MenuRequest;
+    pub enum Action {
+        Sync,
+        Lock,
+        LogOut,
+    }
 }
 
 pub mod fs;

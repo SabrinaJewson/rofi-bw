@@ -80,7 +80,9 @@ pub mod menu_request {
             data: CopyData,
             notification: Option<Notification>,
         },
-        Sync,
+        Sync {
+            filter: String,
+        },
         Lock,
         LogOut,
         Exit,

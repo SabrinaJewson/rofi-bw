@@ -151,15 +151,19 @@ fn try_main(
 
                         AfterMenu::ContinueServing
                     }
-                    ipc::MenuRequest::Sync => match session.resync() {
-                        Ok(()) => AfterMenu::ShowMenuAgain,
-                        Err(session::ResyncError::RefreshToken(
-                            auth::RefreshError::SessionExpired(_),
-                        )) => AfterMenu::UnlockAgain,
-                        Err(e) => return Err(e.into()),
-                    },
+                    ipc::MenuRequest::Sync { filter } => {
+                        request.filter = filter;
+                        match session.resync() {
+                            Ok(()) => AfterMenu::ShowMenuAgain,
+                            Err(session::ResyncError::RefreshToken(
+                                auth::RefreshError::SessionExpired(_),
+                            )) => AfterMenu::UnlockAgain,
+                            Err(e) => return Err(e.into()),
+                        }
+                    }
                     ipc::MenuRequest::Lock => AfterMenu::StopServing,
                     ipc::MenuRequest::LogOut => {
+                        request.filter.clear();
                         data.email = None;
                         data.store()?;
                         AfterMenu::UnlockAgain
