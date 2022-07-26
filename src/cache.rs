@@ -25,14 +25,14 @@ impl Key {
     }
 }
 
-pub(crate) fn load(dir_path: &Path, key: &Key) -> Option<Cache> {
+pub(crate) fn load(dir_path: &fs::Path, key: &Key) -> Option<Cache> {
     load_inner(dir_path, key).unwrap_or_else(|e| {
         eprintln!("Warning: {:?}", e.context("failed to load cache"));
         None
     })
 }
 
-fn load_inner(dir_path: &Path, key: &Key) -> anyhow::Result<Option<Cache>> {
+fn load_inner(dir_path: &fs::Path, key: &Key) -> anyhow::Result<Option<Cache>> {
     let file_path = dir_path.join(CACHE_FILE_NAME);
     let data = match fs::read(&*file_path) {
         Ok(data) => data,
@@ -82,13 +82,13 @@ fn load_inner(dir_path: &Path, key: &Key) -> anyhow::Result<Option<Cache>> {
     Ok(Some(cache))
 }
 
-pub(crate) fn store(dir_path: &Path, key: &Key, data: CacheRef<'_, '_>) {
+pub(crate) fn store(dir_path: &fs::Path, key: &Key, data: CacheRef<'_, '_>) {
     if let Err(e) = store_inner(dir_path, key, data) {
         eprintln!("Warning: {:?}", e.context("failed to store refresh token"));
     }
 }
 
-fn store_inner(dir_path: &Path, key: &Key, data: CacheRef<'_, '_>) -> anyhow::Result<()> {
+fn store_inner(dir_path: &fs::Path, key: &Key, data: CacheRef<'_, '_>) -> anyhow::Result<()> {
     let mut plaintext = Vec::new();
     let refresh_token_len = data.refresh_token.len();
     let refresh_token_len: u8 = refresh_token_len
@@ -165,6 +165,5 @@ use chacha20poly1305::XChaCha20Poly1305;
 use rofi_bw_common::fs;
 use std::io;
 use std::num::NonZeroU32;
-use std::path::Path;
 use std::str;
 use zeroize::Zeroizing;

@@ -19,11 +19,11 @@ enum Response {
     Busy,
 }
 
-pub(crate) fn invoke(runtime_dir: &Path, request: &Request) -> anyhow::Result<bool> {
+pub(crate) fn invoke(runtime_dir: &fs::Path, request: &Request) -> anyhow::Result<bool> {
     invoke_inner(runtime_dir, request).context("failed to invoke daemon")
 }
 
-fn invoke_inner(runtime_dir: &Path, request: &Request) -> anyhow::Result<bool> {
+fn invoke_inner(runtime_dir: &fs::Path, request: &Request) -> anyhow::Result<bool> {
     let socket_path = runtime_dir.join(SOCKET_FILE_NAME);
 
     let acceptable_errors = [io::ErrorKind::NotFound, io::ErrorKind::ConnectionRefused];
@@ -78,11 +78,11 @@ enum State {
 }
 
 impl Daemon {
-    pub(crate) fn bind(runtime_dir: &Path, auto_lock: AutoLock) -> anyhow::Result<Self> {
+    pub(crate) fn bind(runtime_dir: &fs::Path, auto_lock: AutoLock) -> anyhow::Result<Self> {
         let socket_path = runtime_dir.join(SOCKET_FILE_NAME);
 
         drop(fs::create_dir_all(runtime_dir));
-        drop(fs::remove_file(&*socket_path));
+        drop(std::fs::remove_file(&*socket_path));
 
         let listener = UnixListener::bind(&*socket_path)
             .with_context(|| format!("failed to bind to socket at {}", socket_path.display()))?;
@@ -209,7 +209,7 @@ fn bincode_config() -> impl bincode::config::Config {
 use crate::config::AutoLock;
 use anyhow::anyhow;
 use anyhow::Context as _;
-use std::fs;
+use rofi_bw_common::fs;
 use std::io;
 use std::io::Read;
 use std::io::Write;
@@ -217,7 +217,6 @@ use std::mem;
 use std::net;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;

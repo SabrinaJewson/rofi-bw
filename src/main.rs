@@ -35,7 +35,7 @@ struct Args {
     ///
     /// Note that this will not be taken into account if an instance of rofi-bw is already running.
     #[clap(short, long)]
-    config_file: Option<PathBuf>,
+    config_file: Option<fs::PathBuf>,
 }
 
 // TODO: This function is too big, I need to refactor it
@@ -318,8 +318,8 @@ use clap::Parser;
 use config::Config;
 use daemon::Daemon;
 use directories::ProjectDirs;
+use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
 use std::env;
-use std::path::PathBuf;
 use std::process;
 use zeroize::Zeroizing;
