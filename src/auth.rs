@@ -99,7 +99,7 @@ pub(crate) fn login(
     scopes: Scopes,
     email: &str,
     master_password: &str,
-) -> anyhow::Result<(Prelogin, MasterKey, AccessToken)> {
+) -> anyhow::Result<(Prelogin, MasterKey, Token)> {
     let prelogin = prelogin(http, email)?;
     let master_key = master_key(&prelogin, email, master_password);
 
@@ -273,7 +273,7 @@ pub(crate) fn refresh_token(
     http: &ureq::Agent,
     client_id: &str,
     refresh_token: &str,
-) -> Result<AccessToken, RefreshError> {
+) -> Result<Token, RefreshError> {
     let response = http
         .post("https://identity.bitwarden.com/connect/token")
         .send_form(&[
@@ -285,7 +285,7 @@ pub(crate) fn refresh_token(
             if let ureq::Error::Status(400, _) = e {
                 RefreshError::SessionExpired(SessionExpired)
             } else {
-                RefreshError::Http(e)
+                RefreshError::Http(Box::new(e))
             }
         })?
         .into_json::<AccessTokenResponse>()
@@ -295,10 +295,9 @@ pub(crate) fn refresh_token(
 }
 
 #[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum RefreshError {
     SessionExpired(SessionExpired),
-    Http(ureq::Error),
+    Http(Box<ureq::Error>),
     Body(io::Error),
 }
 
@@ -330,13 +329,17 @@ impl Display for SessionExpired {
 impl std::error::Error for SessionExpired {}
 
 #[derive(Debug)]
-pub(crate) struct AccessToken {
+pub(crate) struct Token {
     pub(crate) access_token: String,
     pub(crate) refresh_token: String,
     pub(crate) expires: SystemTime,
 }
 
-impl AccessToken {
+impl Token {
+    pub(crate) fn set_expired(&mut self) {
+        self.access_token.clear();
+    }
+
     pub(crate) fn is_expired(&self) -> bool {
         self.access_token.is_empty() || SystemTime::now() >= self.expires
     }
@@ -349,8 +352,8 @@ struct AccessTokenResponse {
     expires_in: u64,
 }
 impl AccessTokenResponse {
-    fn into_token(self) -> AccessToken {
-        AccessToken {
+    fn into_token(self) -> Token {
+        Token {
             access_token: self.access_token,
             refresh_token: self.refresh_token,
             expires: SystemTime::now() + Duration::from_secs(self.expires_in),

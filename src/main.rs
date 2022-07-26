@@ -93,13 +93,13 @@ fn try_main(
         }
         let email = data.email.as_ref().unwrap();
 
-        let (master_key, token) = {
+        let mut session = {
             let master_password = match ask_master_password()? {
                 Some(master_password) => master_password,
                 None => return Ok(()),
             };
 
-            unlock_or_log_in(
+            Session::new(
                 &http,
                 project_dirs.cache_dir(),
                 &*client_id,
@@ -113,9 +113,6 @@ fn try_main(
             )?
         };
 
-        let mut client = client(http.clone(), &*client_id, token);
-        let mut account_data = client.sync()?;
-
         loop {
             enum AfterMenu {
                 ShowMenuAgain,
@@ -126,8 +123,8 @@ fn try_main(
 
             let res: anyhow::Result<_> = (|| {
                 let handshake = ipc::Handshake {
-                    master_key: &master_key,
-                    data: account_data.as_bytes(),
+                    master_key: session.master_key(),
+                    data: session.account_data().as_bytes(),
                     notify_copy: copy_notification,
                 };
 
@@ -151,24 +148,13 @@ fn try_main(
 
                         AfterMenu::ContinueServing
                     }
-                    ipc::MenuRequest::Sync => {
-                        // Force a token refresh. This is needed to make sure that our session
-                        // hasn't expired; if it has, it’s likely the master password or KDF
-                        // iterations have changed, and so we need to enter the master password
-                        // again.
-                        client.token_source.token.access_token.clear();
-
-                        match client.sync() {
-                            Ok(new_account_data) => {
-                                account_data = new_account_data;
-                                AfterMenu::ShowMenuAgain
-                            }
-                            Err(client::SyncError::Token(auth::RefreshError::SessionExpired(
-                                _,
-                            ))) => AfterMenu::UnlockAgain,
-                            Err(e) => return Err(e.into()),
-                        }
-                    }
+                    ipc::MenuRequest::Sync => match session.resync() {
+                        Ok(()) => AfterMenu::ShowMenuAgain,
+                        Err(session::ResyncError::RefreshToken(
+                            auth::RefreshError::SessionExpired(_),
+                        )) => AfterMenu::UnlockAgain,
+                        Err(e) => return Err(e.into()),
+                    },
                     ipc::MenuRequest::Lock => AfterMenu::StopServing,
                     ipc::MenuRequest::LogOut => {
                         data.email = None;
@@ -226,87 +212,6 @@ fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
         return Ok(None);
     }
     Ok(Some(master_password))
-}
-
-/// If we have already started a session on this device, unlock that session; otherwise, log in.
-fn unlock_or_log_in(
-    http: &ureq::Agent,
-    cache_dir: &Path,
-    client_id: &str,
-    device: auth::Device<'_>,
-    email: &str,
-    master_password: &str,
-) -> anyhow::Result<(MasterKey, AccessToken)> {
-    let cache_key = cache::Key::new(email, master_password)?;
-    let cache = cache::load(cache_dir, &cache_key);
-
-    let validated_cache = match cache {
-        Some(cache) => match auth::refresh_token(http, client_id, &*cache.refresh_token) {
-            Ok(token) => Some((cache.prelogin, token)),
-            Err(auth::RefreshError::SessionExpired(_)) => None,
-            Err(e) => return Err(e.into()),
-        },
-        None => None,
-    };
-
-    Ok(match validated_cache {
-        Some((prelogin, token)) => {
-            let master_key = auth::master_key(&prelogin, email, master_password);
-            (master_key, token)
-        }
-        None => {
-            let (prelogin, master_key, token) = auth::login(
-                http,
-                client_id,
-                device,
-                auth::Scopes::all(),
-                email,
-                master_password,
-            )?;
-            cache::store(
-                cache_dir,
-                &cache_key,
-                CacheRef {
-                    refresh_token: &*token.refresh_token,
-                    prelogin: &prelogin,
-                },
-            );
-            (master_key, token)
-        }
-    })
-}
-
-fn client<'client_id>(
-    http: ureq::Agent,
-    client_id: &'client_id str,
-    token: AccessToken,
-) -> Client<TokenSource, &'static str> {
-    Client {
-        http: http.clone(),
-        token_source: TokenSource {
-            http,
-            token,
-            client_id,
-        },
-        base_url: "https://vault.bitwarden.com/api",
-    }
-}
-
-struct TokenSource<'client_id> {
-    http: ureq::Agent,
-    token: AccessToken,
-    client_id: &'client_id str,
-}
-
-impl client::TokenSource for TokenSource<'_> {
-    type Error = auth::RefreshError;
-    fn access_token(&mut self) -> Result<&str, Self::Error> {
-        if self.token.is_expired() {
-            self.token =
-                auth::refresh_token(&self.http, self.client_id, &*self.token.refresh_token)?;
-        }
-        Ok(&*self.token.access_token)
-    }
 }
 
 use prompt::prompt;
@@ -385,10 +290,10 @@ mod show_notification {
 
 mod daemon;
 
-use auth::AccessToken;
-mod auth;
+use session::Session;
+mod session;
 
-mod client;
+mod bitwarden_api;
 
 mod cache;
 
@@ -402,18 +307,16 @@ mod menu;
 use error_reporting::report_error;
 mod error_reporting;
 
-use crate::cache::CacheRef;
+mod auth;
+
 use anyhow::Context as _;
 use arboard::Clipboard;
 use clap::Parser;
-use client::Client;
 use config::Config;
 use daemon::Daemon;
 use directories::ProjectDirs;
 use rofi_bw_common::ipc;
-use rofi_bw_common::MasterKey;
 use std::env;
-use std::path::Path;
 use std::path::PathBuf;
 use std::process;
 use zeroize::Zeroizing;
