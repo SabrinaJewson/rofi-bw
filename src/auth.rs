@@ -95,7 +95,7 @@ pub(crate) fn master_key(prelogin: &Prelogin, email: &str, master_password: &str
 pub(crate) fn login(
     http: &ureq::Agent,
     client_id: &str,
-    device: Device<'_, '_>,
+    device: Device<'_>,
     scopes: Scopes,
     email: &str,
     master_password: &str,
@@ -140,7 +140,13 @@ pub(crate) fn login(
                 ("scope", &*scopes.to_string()),
                 ("client_id", client_id),
                 ("deviceName", device.name),
-                ("deviceIdentifier", device.identifier),
+                (
+                    "deviceIdentifier",
+                    device
+                        .identifier
+                        .as_hyphenated()
+                        .encode_lower(&mut [0; uuid::fmt::Hyphenated::LENGTH]),
+                ),
                 ("deviceType", device_type),
             ])
             .map_err(|e| match e {
@@ -176,29 +182,57 @@ pub(crate) fn login(
     Ok((prelogin, master_key, response.into_token()))
 }
 
+// from:
+// https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum DeviceType {
-    // Android = 0,
-    // Ios = 1,
-    // ChromeExtension = 2,
-    // FirefoxExtension = 3,
-    // OperaExtension = 4,
-    // EdgeExtension = 5,
-    // WindowsDesktop = 6,
-    // MacOsDesktop = 7,
+    Android = 0,
+    Ios = 1,
+    ChromeExtension = 2,
+    FirefoxExtension = 3,
+    OperaExtension = 4,
+    EdgeExtension = 5,
+    WindowsDesktop = 6,
+    MacOsDesktop = 7,
     LinuxDesktop = 8,
-    // ChromeBrowser = 9,
-    // FirefoxBrowser = 10,
-    // OperaBrowser = 11,
-    // EdgeBrowser = 12,
-    // IEBrowser = 13,
-    // UnknownBrowser = 14,
-    // AndroidAmazon = 15,
-    // Uwp = 16,
-    // SafariBrowser = 17,
-    // VivaldiBrowser = 18,
-    // VivaldiExtension = 19,
-    // SafariExtension = 20,
+    ChromeBrowser = 9,
+    FirefoxBrowser = 10,
+    OperaBrowser = 11,
+    EdgeBrowser = 12,
+    IeBrowser = 13,
+    UnknownBrowser = 14,
+    AndroidAmazon = 15,
+    Uwp = 16,
+    SafariBrowser = 17,
+    VivaldiBrowser = 18,
+    VivaldiExtension = 19,
+    SafariExtension = 20,
+}
+
+impl DeviceType {
+    pub(crate) const DISPLAY_NAMES: [(Self, &'static str); 21] = [
+        (Self::Android, "Android"),
+        (Self::Ios, "iOS"),
+        (Self::ChromeExtension, "Chrome Extension"),
+        (Self::FirefoxExtension, "Firefox Extension"),
+        (Self::OperaExtension, "Opera Extension"),
+        (Self::EdgeExtension, "Edge Extension"),
+        (Self::WindowsDesktop, "Windows"),
+        (Self::MacOsDesktop, "macOS"),
+        (Self::LinuxDesktop, "Linux"),
+        (Self::ChromeBrowser, "Chrome"),
+        (Self::FirefoxBrowser, "Firefox"),
+        (Self::OperaBrowser, "Opera"),
+        (Self::EdgeBrowser, "Edge"),
+        (Self::IeBrowser, "Internet Explorer"),
+        (Self::UnknownBrowser, "Unknown Browser"),
+        (Self::AndroidAmazon, "Android"),
+        (Self::Uwp, "UWP"),
+        (Self::SafariBrowser, "Safari"),
+        (Self::VivaldiBrowser, "Vivaldi"),
+        (Self::VivaldiExtension, "Vivaldi Extension"),
+        (Self::SafariExtension, "Safari Extension"),
+    ];
 }
 
 bitflags! {
@@ -229,9 +263,9 @@ impl Display for Scopes {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Device<'name, 'identifier> {
+pub(crate) struct Device<'name> {
     pub(crate) name: &'name str,
-    pub(crate) identifier: &'identifier str,
+    pub(crate) identifier: Uuid,
     pub(crate) r#type: DeviceType,
 }
 
@@ -353,4 +387,5 @@ use std::num::NonZeroU32;
 use std::str;
 use std::time::Duration;
 use std::time::SystemTime;
+use uuid::Uuid;
 use zeroize::Zeroizing;

@@ -70,6 +70,9 @@ fn try_main(
         auto_lock,
         copy_notification,
         rofi_options,
+        client_id,
+        device_type,
+        device_name,
     } = config::load(&*config_path)?;
 
     let mut daemon = Daemon::bind(runtime_dir, auto_lock)?;
@@ -99,13 +102,18 @@ fn try_main(
             unlock_or_log_in(
                 &http,
                 project_dirs.cache_dir(),
-                &data.device_id,
+                &*client_id,
+                auth::Device {
+                    name: &*device_name,
+                    identifier: data.device_id,
+                    r#type: device_type,
+                },
                 &*email,
                 &**master_password,
             )?
         };
 
-        let mut client = client(&http, token);
+        let mut client = client(http.clone(), &*client_id, token);
         let mut account_data = client.sync()?;
 
         loop {
@@ -224,7 +232,8 @@ fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
 fn unlock_or_log_in(
     http: &ureq::Agent,
     cache_dir: &Path,
-    device_id: &Uuid,
+    client_id: &str,
+    device: auth::Device<'_>,
     email: &str,
     master_password: &str,
 ) -> anyhow::Result<(MasterKey, AccessToken)> {
@@ -232,7 +241,7 @@ fn unlock_or_log_in(
     let cache = cache::load(cache_dir, &cache_key);
 
     let validated_cache = match cache {
-        Some(cache) => match auth::refresh_token(http, CLIENT_ID, &*cache.refresh_token) {
+        Some(cache) => match auth::refresh_token(http, client_id, &*cache.refresh_token) {
             Ok(token) => Some((cache.prelogin, token)),
             Err(auth::RefreshError::SessionExpired(_)) => None,
             Err(e) => return Err(e.into()),
@@ -248,12 +257,8 @@ fn unlock_or_log_in(
         None => {
             let (prelogin, master_key, token) = auth::login(
                 http,
-                CLIENT_ID,
-                auth::Device {
-                    name: "linux",
-                    identifier: &*format!("{:x}", device_id.as_hyphenated()),
-                    r#type: auth::DeviceType::LinuxDesktop,
-                },
+                client_id,
+                device,
                 auth::Scopes::all(),
                 email,
                 master_password,
@@ -271,29 +276,34 @@ fn unlock_or_log_in(
     })
 }
 
-const CLIENT_ID: &str = "desktop";
-
-fn client(http: &ureq::Agent, token: AccessToken) -> Client<TokenSource, &'static str> {
+fn client<'client_id>(
+    http: ureq::Agent,
+    client_id: &'client_id str,
+    token: AccessToken,
+) -> Client<TokenSource, &'static str> {
     Client {
         http: http.clone(),
         token_source: TokenSource {
-            http: http.clone(),
+            http,
             token,
+            client_id,
         },
         base_url: "https://vault.bitwarden.com/api",
     }
 }
 
-struct TokenSource {
+struct TokenSource<'client_id> {
     http: ureq::Agent,
     token: AccessToken,
+    client_id: &'client_id str,
 }
 
-impl client::TokenSource for TokenSource {
+impl client::TokenSource for TokenSource<'_> {
     type Error = auth::RefreshError;
     fn access_token(&mut self) -> Result<&str, Self::Error> {
         if self.token.is_expired() {
-            self.token = auth::refresh_token(&self.http, CLIENT_ID, &*self.token.refresh_token)?;
+            self.token =
+                auth::refresh_token(&self.http, self.client_id, &*self.token.refresh_token)?;
         }
         Ok(&*self.token.access_token)
     }
@@ -406,5 +416,4 @@ use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
-use uuid::Uuid;
 use zeroize::Zeroizing;
