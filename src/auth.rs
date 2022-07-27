@@ -257,6 +257,82 @@ mod login {
     use zeroize::Zeroizing;
 }
 
+pub(crate) fn refresh_token(
+    http: &ureq::Agent,
+    client_id: &str,
+    refresh_token: &str,
+) -> Result<Token, RefreshError> {
+    let response = http
+        .post("https://identity.bitwarden.com/connect/token")
+        .send_form(&[
+            ("grant_type", "refresh_token"),
+            ("client_id", client_id),
+            ("refresh_token", refresh_token),
+        ])
+        .map_err(|e| {
+            if let ureq::Error::Status(400, _) = e {
+                RefreshError::SessionExpired(SessionExpired)
+            } else {
+                RefreshError::Http(Box::new(e))
+            }
+        })?
+        .into_json::<AccessTokenResponse>()
+        .map_err(RefreshError::Body)?;
+
+    Ok(response.into_token())
+}
+
+#[derive(Debug)]
+pub(crate) enum RefreshError {
+    SessionExpired(SessionExpired),
+    Http(Box<ureq::Error>),
+    Body(io::Error),
+}
+
+impl Display for RefreshError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("failed to refresh token")
+    }
+}
+
+impl std::error::Error for RefreshError {
+    fn source(&self) -> Option<&(dyn de::StdError + 'static)> {
+        match self {
+            Self::SessionExpired(e) => Some(e),
+            Self::Http(e) => Some(e),
+            Self::Body(e) => Some(e),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct SessionExpired;
+
+impl Display for SessionExpired {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("session expired")
+    }
+}
+
+impl std::error::Error for SessionExpired {}
+
+#[derive(Debug)]
+pub(crate) struct Token {
+    pub(crate) access_token: String,
+    pub(crate) refresh_token: String,
+    pub(crate) expires: SystemTime,
+}
+
+impl Token {
+    pub(crate) fn set_expired(&mut self) {
+        self.access_token.clear();
+    }
+
+    pub(crate) fn is_expired(&self) -> bool {
+        self.access_token.is_empty() || SystemTime::now() >= self.expires
+    }
+}
+
 // from:
 // https://github.com/bitwarden/server/blob/master/src/Core/Enums/DeviceType.cs
 #[derive(Debug, Clone, Copy)]
@@ -342,82 +418,6 @@ pub(crate) struct Device<'name> {
     pub(crate) name: &'name str,
     pub(crate) identifier: Uuid,
     pub(crate) r#type: DeviceType,
-}
-
-pub(crate) fn refresh_token(
-    http: &ureq::Agent,
-    client_id: &str,
-    refresh_token: &str,
-) -> Result<Token, RefreshError> {
-    let response = http
-        .post("https://identity.bitwarden.com/connect/token")
-        .send_form(&[
-            ("grant_type", "refresh_token"),
-            ("client_id", client_id),
-            ("refresh_token", refresh_token),
-        ])
-        .map_err(|e| {
-            if let ureq::Error::Status(400, _) = e {
-                RefreshError::SessionExpired(SessionExpired)
-            } else {
-                RefreshError::Http(Box::new(e))
-            }
-        })?
-        .into_json::<AccessTokenResponse>()
-        .map_err(RefreshError::Body)?;
-
-    Ok(response.into_token())
-}
-
-#[derive(Debug)]
-pub(crate) enum RefreshError {
-    SessionExpired(SessionExpired),
-    Http(Box<ureq::Error>),
-    Body(io::Error),
-}
-
-impl Display for RefreshError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("failed to refresh token")
-    }
-}
-
-impl std::error::Error for RefreshError {
-    fn source(&self) -> Option<&(dyn de::StdError + 'static)> {
-        match self {
-            Self::SessionExpired(e) => Some(e),
-            Self::Http(e) => Some(e),
-            Self::Body(e) => Some(e),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct SessionExpired;
-
-impl Display for SessionExpired {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("session expired")
-    }
-}
-
-impl std::error::Error for SessionExpired {}
-
-#[derive(Debug)]
-pub(crate) struct Token {
-    pub(crate) access_token: String,
-    pub(crate) refresh_token: String,
-    pub(crate) expires: SystemTime,
-}
-
-impl Token {
-    pub(crate) fn set_expired(&mut self) {
-        self.access_token.clear();
-    }
-
-    pub(crate) fn is_expired(&self) -> bool {
-        self.access_token.is_empty() || SystemTime::now() >= self.expires
-    }
 }
 
 #[derive(Deserialize)]
