@@ -147,24 +147,10 @@ fn try_main(
                         reprompt,
                         menu_state,
                     } => {
-                        if reprompt {
-                            let status = format!("The item \"{name}\" is protected and requires verifying your master password");
-
-                            let mut again = false;
-                            loop {
-                                let master_password = match ask_master_password(again, &*status)? {
-                                    Some(password) => password,
-                                    None => {
-                                        request.filter = menu_state.filter;
-                                        return Ok(AfterMenu::ShowMenuAgain);
-                                    }
-                                };
-                                if session.is_correct_master_password(&**master_password) {
-                                    break;
-                                }
-                                again = true;
-                            }
-                        };
+                        if reprompt && !run_reprompt(&session, &*name)? {
+                            request.filter = menu_state.filter;
+                            return Ok(AfterMenu::ShowMenuAgain);
+                        }
 
                         clipboard
                             .set_text(data)
@@ -215,6 +201,23 @@ fn try_main(
             }
         }
     }
+}
+
+fn run_reprompt(session: &Session<'_, '_>, name: &str) -> anyhow::Result<bool> {
+    let status =
+        format!("The item \"{name}\" is protected and requires verifying your master password");
+
+    let mut again = false;
+    Ok(loop {
+        let master_password = match ask_master_password(again, &*status)? {
+            Some(password) => password,
+            None => break false,
+        };
+        if session.is_correct_master_password(&**master_password) {
+            break true;
+        }
+        again = true;
+    })
 }
 
 fn ask_email() -> anyhow::Result<Option<String>> {
