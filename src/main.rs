@@ -165,8 +165,8 @@ fn try_main(
                     }
                     ipc::MenuRequest::Sync { menu_state } => match session.resync() {
                         Ok(()) => AfterMenu::ShowMenuAgain { menu_state },
-                        Err(session::ResyncError::RefreshToken(
-                            auth::RefreshError::SessionExpired(_),
+                        Err(session::ResyncError::Refresh(
+                            auth::refresh::Error::SessionExpired(_),
                         )) => AfterMenu::UnlockAgain,
                         Err(e) => return Err(e.into()),
                     },

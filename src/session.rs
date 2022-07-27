@@ -21,9 +21,9 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
         let cache = cache::load(cache_dir, &cache_key);
 
         let validated_cache = match cache {
-            Some(cache) => match auth::refresh_token(http, client_id, &*cache.refresh_token) {
+            Some(cache) => match auth::refresh(http, client_id, &*cache.refresh_token) {
                 Ok(token) => Some((cache.prelogin, token)),
-                Err(auth::RefreshError::SessionExpired(_)) => None,
+                Err(auth::refresh::Error::SessionExpired(_)) => None,
                 Err(e) => return Err(e.into()),
             },
             None => None,
@@ -68,10 +68,11 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
         })
     }
 
-    fn client(&mut self) -> Result<bitwarden_api::Client<'http, '_, 'static>, auth::RefreshError> {
+    fn client(
+        &mut self,
+    ) -> Result<bitwarden_api::Client<'http, '_, 'static>, auth::refresh::Error> {
         if self.token.is_expired() {
-            self.token =
-                auth::refresh_token(self.http, self.client_id, &*self.token.refresh_token)?;
+            self.token = auth::refresh(self.http, self.client_id, &*self.token.refresh_token)?;
         }
         Ok(bitwarden_api::Client::new(
             self.http,
@@ -105,13 +106,13 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
 
 #[derive(Debug)]
 pub(crate) enum ResyncError {
-    RefreshToken(auth::RefreshError),
+    Refresh(auth::refresh::Error),
     Sync(bitwarden_api::SyncError),
 }
 
-impl From<auth::RefreshError> for ResyncError {
-    fn from(error: auth::RefreshError) -> Self {
-        Self::RefreshToken(error)
+impl From<auth::refresh::Error> for ResyncError {
+    fn from(error: auth::refresh::Error) -> Self {
+        Self::Refresh(error)
     }
 }
 
@@ -130,7 +131,7 @@ impl Display for ResyncError {
 impl std::error::Error for ResyncError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::RefreshToken(e) => Some(e),
+            Self::Refresh(e) => Some(e),
             Self::Sync(e) => Some(e),
         }
     }

@@ -257,64 +257,74 @@ mod login {
     use zeroize::Zeroizing;
 }
 
-pub(crate) fn refresh_token(
-    http: &ureq::Agent,
-    client_id: &str,
-    refresh_token: &str,
-) -> Result<Token, RefreshError> {
-    let response = http
-        .post("https://identity.bitwarden.com/connect/token")
-        .send_form(&[
-            ("grant_type", "refresh_token"),
-            ("client_id", client_id),
-            ("refresh_token", refresh_token),
-        ])
-        .map_err(|e| {
-            if let ureq::Error::Status(400, _) = e {
-                RefreshError::SessionExpired(SessionExpired)
-            } else {
-                RefreshError::Http(Box::new(e))
-            }
-        })?
-        .into_json::<AccessTokenResponse>()
-        .map_err(RefreshError::Body)?;
+pub(crate) use refresh::refresh;
+pub(crate) mod refresh {
+    pub(crate) fn refresh(
+        http: &ureq::Agent,
+        client_id: &str,
+        refresh_token: &str,
+    ) -> Result<auth::Token, Error> {
+        let response = http
+            .post("https://identity.bitwarden.com/connect/token")
+            .send_form(&[
+                ("grant_type", "refresh_token"),
+                ("client_id", client_id),
+                ("refresh_token", refresh_token),
+            ])
+            .map_err(|e| {
+                if let ureq::Error::Status(400, _) = e {
+                    Error::SessionExpired(SessionExpired)
+                } else {
+                    Error::Http(Box::new(e))
+                }
+            })?
+            .into_json::<AccessTokenResponse>()
+            .map_err(Error::Body)?;
 
-    Ok(response.into_token())
-}
-
-#[derive(Debug)]
-pub(crate) enum RefreshError {
-    SessionExpired(SessionExpired),
-    Http(Box<ureq::Error>),
-    Body(io::Error),
-}
-
-impl Display for RefreshError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("failed to refresh token")
+        Ok(response.into_token())
     }
-}
 
-impl std::error::Error for RefreshError {
-    fn source(&self) -> Option<&(dyn de::StdError + 'static)> {
-        match self {
-            Self::SessionExpired(e) => Some(e),
-            Self::Http(e) => Some(e),
-            Self::Body(e) => Some(e),
+    #[derive(Debug)]
+    pub(crate) enum Error {
+        SessionExpired(SessionExpired),
+        Http(Box<ureq::Error>),
+        Body(io::Error),
+    }
+
+    impl Display for Error {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            f.write_str("failed to refresh token")
         }
     }
-}
 
-#[derive(Debug)]
-pub(crate) struct SessionExpired;
-
-impl Display for SessionExpired {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("session expired")
+    impl std::error::Error for Error {
+        fn source(&self) -> Option<&(dyn 'static + std::error::Error)> {
+            match self {
+                Self::SessionExpired(e) => Some(e),
+                Self::Http(e) => Some(e),
+                Self::Body(e) => Some(e),
+            }
+        }
     }
-}
 
-impl std::error::Error for SessionExpired {}
+    #[derive(Debug)]
+    pub(crate) struct SessionExpired;
+
+    impl Display for SessionExpired {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            f.write_str("session expired")
+        }
+    }
+
+    impl std::error::Error for SessionExpired {}
+
+    use super::AccessTokenResponse;
+    use crate::auth;
+    use std::fmt;
+    use std::fmt::Display;
+    use std::fmt::Formatter;
+    use std::io;
+}
 
 #[derive(Debug)]
 pub(crate) struct Token {
@@ -446,13 +456,11 @@ fn to_lowercase_cow(s: &str) -> Cow<'_, str> {
 
 use bitflags::bitflags;
 use rofi_bw_common::MasterKey;
-use serde::de;
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
-use std::io;
 use std::str;
 use std::time::Duration;
 use std::time::SystemTime;
