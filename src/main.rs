@@ -206,7 +206,6 @@ impl<'dirs, 'http, 'client_id> SessionManager<'dirs, 'http, 'client_id> {
     }
 
     fn log_out(&mut self) -> anyhow::Result<()> {
-        anyhow::bail!("failed to log out");
         self.data.email = None;
         self.data.store().context("failed to log out")?;
         Ok(())
