@@ -92,14 +92,23 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                 send_request(&mut self.pipe, &ipc::MenuRequest::Exit);
                 rofi_mode::Action::Exit
             }
-            rofi_mode::Event::Ok { alt: _, selected } => match &mut self.state {
-                State::Initialized(initialized) => match initialized.ok(selected, input) {
-                    Some(request) => {
-                        send_request(&mut self.pipe, &request);
-                        rofi_mode::Action::Exit
+            rofi_mode::Event::Ok { alt, selected } => match &mut self.state {
+                State::Initialized(initialized) => {
+                    let request = if alt {
+                        initialized.ok_alt(selected, input);
+                        None
+                    } else {
+                        initialized.ok(selected, input)
+                    };
+
+                    match request {
+                        Some(request) => {
+                            send_request(&mut self.pipe, &request);
+                            rofi_mode::Action::Exit
+                        }
+                        None => rofi_mode::Action::Reload,
                     }
-                    None => rofi_mode::Action::Reload,
-                },
+                }
                 State::Errored(_) => panic!("this mode has no entries"),
             },
             rofi_mode::Event::Complete {

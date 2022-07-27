@@ -80,7 +80,8 @@ pub mod menu_request {
     pub enum MenuRequest {
         Copy {
             /// Used in notifications and for the reprompt message
-            name: String,
+            cipher_name: String,
+            field: String,
             data: String,
             /// Used in notifications
             image_path: Option<String>,

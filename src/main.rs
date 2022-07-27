@@ -267,13 +267,14 @@ fn try_show_menu(
 
     Ok(match res {
         ipc::MenuRequest::Copy {
-            name,
+            cipher_name,
+            field,
             data,
             image_path,
             reprompt,
             menu_state,
         } => {
-            if reprompt && !run_reprompt(session, &*name)? {
+            if reprompt && !run_reprompt(session, &*cipher_name)? {
                 return Ok(Some(menu_state));
             }
 
@@ -282,7 +283,7 @@ fn try_show_menu(
                 .context("failed to set clipboard content")?;
 
             if opts.copy_notification {
-                show_notification(format!("copied {name} password"), image_path);
+                show_notification(format!("copied {cipher_name} {field}"), image_path);
             }
 
             None
@@ -310,9 +311,10 @@ fn try_show_menu(
     })
 }
 
-fn run_reprompt(session: &Session<'_, '_>, name: &str) -> anyhow::Result<bool> {
-    let status =
-        format!("The item \"{name}\" is protected and requires verifying your master password");
+fn run_reprompt(session: &Session<'_, '_>, cipher_name: &str) -> anyhow::Result<bool> {
+    let status = format!(
+        "The item \"{cipher_name}\" is protected and requires verifying your master password"
+    );
 
     let mut again = false;
     Ok(loop {
