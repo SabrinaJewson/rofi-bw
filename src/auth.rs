@@ -1,4 +1,11 @@
-pub(crate) fn prelogin(http: &ureq::Agent, email: &str) -> anyhow::Result<Prelogin> {
+pub(crate) fn prelogin(http: &ureq::Agent, email: &str) -> Result<Prelogin, PreloginError> {
+    prelogin_inner(http, email).map_err(|kind| PreloginError {
+        kind,
+        email: email.into(),
+    })
+}
+
+fn prelogin_inner(http: &ureq::Agent, email: &str) -> Result<Prelogin, PreloginErrorKind> {
     #[derive(Serialize)]
     struct Body<'email> {
         email: &'email str,
@@ -6,9 +13,40 @@ pub(crate) fn prelogin(http: &ureq::Agent, email: &str) -> anyhow::Result<Prelog
 
     http.post("https://vault.bitwarden.com/api/accounts/prelogin")
         .send_json(Body { email })
-        .context("prelogin failed")?
+        .map_err(|e| PreloginErrorKind::Http(Box::new(e)))?
         .into_json()
-        .context("prelogin body reading failed")
+        .map_err(PreloginErrorKind::Body)
+}
+
+#[derive(Debug)]
+pub(crate) struct PreloginError {
+    kind: PreloginErrorKind,
+    email: Box<str>,
+}
+
+impl Display for PreloginError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "failed to download prelogin data for account {}",
+            self.email
+        )
+    }
+}
+
+impl std::error::Error for PreloginError {
+    fn source(&self) -> Option<&(dyn 'static + std::error::Error)> {
+        match &self.kind {
+            PreloginErrorKind::Http(e) => Some(e),
+            PreloginErrorKind::Body(e) => Some(e),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum PreloginErrorKind {
+    Http(Box<ureq::Error>),
+    Body(io::Error),
 }
 
 #[derive(Debug)]
