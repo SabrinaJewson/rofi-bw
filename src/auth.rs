@@ -286,7 +286,8 @@ pub(crate) mod login {
 
                             match serde_json::from_str::<ErrorResponse>(&body) {
                                 Ok(response) => {
-                                    if response.error_description == "invalid_username_or_password" {
+                                    if response.error_description == "invalid_username_or_password"
+                                    {
                                         return ErrorKind::InvalidCredentials(InvalidCredentials);
                                     }
                                     Body::Message(response.error_model.message)

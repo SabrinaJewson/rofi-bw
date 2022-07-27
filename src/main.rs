@@ -234,20 +234,20 @@ fn run_reprompt(session: &Session<'_, '_>, name: &str) -> anyhow::Result<bool> {
 
 fn ask_email() -> anyhow::Result<Option<String>> {
     let mut email = String::new();
-    if prompt("Email address", "", prompt::Visibility::Shown, &mut email)
-        .context("failed to prompt for email")?
-        == prompt::Outcome::Cancelled
-        || email.is_empty()
-    {
+    let outcome = prompt("Email address", "", prompt::Visibility::Shown, &mut email)
+        .context("failed to prompt for email")?;
+
+    if outcome == prompt::Outcome::Cancelled || email.is_empty() {
         return Ok(None);
     }
+
     Ok(Some(email))
 }
 
 fn ask_master_password(again: bool, status: &str) -> anyhow::Result<Option<Zeroizing<String>>> {
     // Try to prevent leaking of the master password into memory via a large buffer
     let mut master_password = Zeroizing::new(String::with_capacity(1024));
-    if prompt(
+    let outcome = prompt(
         if again {
             "Master password incorrect, try again"
         } else {
@@ -257,12 +257,12 @@ fn ask_master_password(again: bool, status: &str) -> anyhow::Result<Option<Zeroi
         prompt::Visibility::Hidden,
         &mut *master_password,
     )
-    .context("failed to prompt for master password")?
-        == prompt::Outcome::Cancelled
-        || master_password.is_empty()
-    {
+    .context("failed to prompt for master password")?;
+
+    if outcome == prompt::Outcome::Cancelled || master_password.is_empty() {
         return Ok(None);
     }
+
     Ok(Some(master_password))
 }
 
