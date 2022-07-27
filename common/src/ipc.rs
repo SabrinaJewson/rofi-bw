@@ -141,7 +141,7 @@ pub mod menu_request {
     }
 
     /// Old state of the menu that can be restored.
-    #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+    #[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
     pub struct MenuState {
         pub filter: String,
     }

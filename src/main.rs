@@ -78,7 +78,7 @@ fn try_main(
     let http = ureq::agent();
 
     let mut session_manager =
-        SessionManager::new(&http, &project_dirs, &*client_id, device_type, device_name)?;
+        SessionManager::new(&project_dirs, &http, &*client_id, device_type, device_name)?;
 
     let mut menu_opts = MenuOpts {
         lib_dir: env::var_os("ROFI_BW_LIB_DIR")
@@ -91,59 +91,59 @@ fn try_main(
     while let Some(mut session) = session_manager.start_session()? {
         loop {
             let after_menu = show_menu(
-                &mut session,
+                &mut session_manager,
+                session,
                 &mut menu_opts,
                 &*request.display,
                 &*request.filter,
             );
-            match after_menu {
-                AfterMenu::ShowMenuAgain {
-                    after_unlock,
-                    menu_state,
-                } => {
-                    request.filter = menu_state.filter;
-                    if after_unlock {
-                        break;
-                    }
+
+            request = if let Some(next_menu_state) = after_menu.next_menu_state {
+                daemon::ShowMenu {
+                    display: request.display,
+                    filter: next_menu_state.filter,
                 }
-                AfterMenu::ContinueServing => match daemon.wait() {
-                    daemon::Request::ShowMenu(new) => request = new,
+            } else if after_menu.session.is_none() {
+                // If we don’t have to show another menu and don’t have an active session, there’s
+                // no need to keep running.
+                return Ok(());
+            } else {
+                match daemon.wait() {
+                    daemon::Request::ShowMenu(new) => new,
                     daemon::Request::Quit => return Ok(()),
-                },
-                AfterMenu::LogOut => {
-                    request.filter.clear();
-                    // TODO: check errors
-                    session_manager.log_out()?;
-                    break;
                 }
-                AfterMenu::StopServing => return Ok(()),
-            }
+            };
+
+            session = match after_menu.session {
+                Some(session) => session,
+                None => break,
+            };
         }
     }
 
     Ok(())
 }
 
-struct SessionManager<'http, 'dirs, 'client_id> {
-    http: &'http ureq::Agent,
+struct SessionManager<'dirs, 'http, 'client_id> {
     project_dirs: &'dirs ProjectDirs,
+    http: &'http ureq::Agent,
     data: Data,
     client_id: &'client_id str,
     device_type: auth::DeviceType,
     device_name: String,
 }
 
-impl<'http, 'dirs, 'client_id> SessionManager<'http, 'dirs, 'client_id> {
+impl<'dirs, 'http, 'client_id> SessionManager<'dirs, 'http, 'client_id> {
     fn new(
-        http: &'http ureq::Agent,
         project_dirs: &'dirs ProjectDirs,
+        http: &'http ureq::Agent,
         client_id: &'client_id str,
         device_type: auth::DeviceType,
         device_name: String,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            http,
             project_dirs,
+            http,
             data: Data::load(project_dirs.data_dir())?,
             client_id,
             device_type,
@@ -206,20 +206,16 @@ impl<'http, 'dirs, 'client_id> SessionManager<'http, 'dirs, 'client_id> {
     }
 
     fn log_out(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("failed to log out");
         self.data.email = None;
         self.data.store().context("failed to log out")?;
         Ok(())
     }
 }
 
-enum AfterMenu {
-    ShowMenuAgain {
-        after_unlock: bool,
-        menu_state: ipc::menu_request::MenuState,
-    },
-    ContinueServing,
-    LogOut,
-    StopServing,
+struct AfterMenu<'http, 'client_id> {
+    session: Option<Session<'http, 'client_id>>,
+    next_menu_state: Option<ipc::menu_request::MenuState>,
 }
 
 struct MenuOpts {
@@ -229,24 +225,34 @@ struct MenuOpts {
     clipboard: Clipboard,
 }
 
-fn show_menu(
-    session: &mut Session<'_, '_>,
+fn show_menu<'http, 'client_id>(
+    session_manager: &mut SessionManager<'_, '_, '_>,
+    session: Session<'http, 'client_id>,
     opts: &mut MenuOpts,
     display: &str,
     filter: &str,
-) -> AfterMenu {
-    try_show_menu(session, opts, display, filter).unwrap_or_else(|e| {
-        report_error(e.context("failed to run menu").as_ref());
-        AfterMenu::ContinueServing
-    })
+) -> AfterMenu<'http, 'client_id> {
+    let mut session = Some(session);
+    let next_menu_state = try_show_menu(session_manager, &mut session, opts, display, filter)
+        .unwrap_or_else(|e| {
+            report_error(e.context("failed to run menu").as_ref());
+            None
+        });
+    AfterMenu {
+        session,
+        next_menu_state,
+    }
 }
 
-fn try_show_menu<'http, 'client_id>(
-    session: &mut Session<'http, 'client_id>,
+fn try_show_menu(
+    session_manager: &mut SessionManager<'_, '_, '_>,
+    session_option: &mut Option<Session<'_, '_>>,
     opts: &mut MenuOpts,
     display: &str,
     filter: &str,
-) -> anyhow::Result<AfterMenu> {
+) -> anyhow::Result<Option<ipc::menu_request::MenuState>> {
+    let session = session_option.as_mut().unwrap();
+
     let handshake = ipc::Handshake {
         master_key: session.master_key(),
         data: session.account_data().as_bytes(),
@@ -269,10 +275,7 @@ fn try_show_menu<'http, 'client_id>(
             menu_state,
         } => {
             if reprompt && !run_reprompt(session, &*name)? {
-                return Ok(AfterMenu::ShowMenuAgain {
-                    after_unlock: false,
-                    menu_state,
-                });
+                return Ok(Some(menu_state));
             }
 
             opts.clipboard
@@ -283,22 +286,28 @@ fn try_show_menu<'http, 'client_id>(
                 show_notification(format!("copied {name} password"), image_path);
             }
 
-            AfterMenu::ContinueServing
+            None
         }
         ipc::MenuRequest::Sync { menu_state } => {
-            let after_unlock = match session.resync() {
-                Ok(()) => false,
-                Err(session::ResyncError::Refresh(auth::refresh::Error::SessionExpired(_))) => true,
+            match session.resync() {
+                Ok(()) => {}
+                Err(session::ResyncError::Refresh(auth::refresh::Error::SessionExpired(_))) => {
+                    *session_option = None;
+                }
                 Err(e) => return Err(e.into()),
             };
-            AfterMenu::ShowMenuAgain {
-                after_unlock,
-                menu_state,
-            }
+            Some(menu_state)
         }
-        ipc::MenuRequest::Lock => AfterMenu::StopServing,
-        ipc::MenuRequest::LogOut => AfterMenu::LogOut,
-        ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
+        ipc::MenuRequest::Lock => {
+            *session_option = None;
+            None
+        }
+        ipc::MenuRequest::LogOut => {
+            session_manager.log_out()?;
+            *session_option = None;
+            Some(ipc::menu_request::MenuState::default())
+        }
+        ipc::MenuRequest::Exit => None,
     })
 }
 
