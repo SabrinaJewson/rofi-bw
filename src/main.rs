@@ -97,7 +97,8 @@ fn try_main(
         let email = data.email.as_ref().unwrap();
 
         let mut session = {
-            let master_password = match ask_master_password()? {
+            // TODO: re-ask master password if incorrect
+            let master_password = match ask_master_password(false, "")? {
                 Some(master_password) => master_password,
                 None => return Ok(()),
             };
@@ -128,7 +129,6 @@ fn try_main(
                 let handshake = ipc::Handshake {
                     master_key: session.master_key(),
                     data: session.account_data().as_bytes(),
-                    notify_copy: copy_notification,
                 };
 
                 let res = menu::run(
@@ -140,19 +140,44 @@ fn try_main(
                 )?;
 
                 Ok(match res {
-                    ipc::MenuRequest::Copy { data, notification } => {
+                    ipc::MenuRequest::Copy {
+                        name,
+                        data,
+                        image_path,
+                        reprompt,
+                        menu_state,
+                    } => {
+                        if reprompt {
+                            let status = format!("The item \"{name}\" is protected and requires verifying your master password");
+
+                            let mut again = false;
+                            loop {
+                                let master_password = match ask_master_password(again, &*status)? {
+                                    Some(password) => password,
+                                    None => {
+                                        request.filter = menu_state.filter;
+                                        return Ok(AfterMenu::ShowMenuAgain);
+                                    }
+                                };
+                                if session.is_correct_master_password(&**master_password) {
+                                    break;
+                                }
+                                again = true;
+                            }
+                        };
+
                         clipboard
                             .set_text(data)
                             .context("failed to set clipboard content")?;
 
-                        if let Some(notification) = notification {
-                            show_notification(notification);
+                        if copy_notification {
+                            show_notification(format!("copied {name} password"), image_path);
                         }
 
                         AfterMenu::ContinueServing
                     }
-                    ipc::MenuRequest::Sync { filter } => {
-                        request.filter = filter;
+                    ipc::MenuRequest::Sync { menu_state } => {
+                        request.filter = menu_state.filter;
                         match session.resync() {
                             Ok(()) => AfterMenu::ShowMenuAgain,
                             Err(session::ResyncError::RefreshToken(
@@ -194,7 +219,7 @@ fn try_main(
 
 fn ask_email() -> anyhow::Result<Option<String>> {
     let mut email = String::new();
-    if prompt("Email address", prompt::Visibility::Shown, &mut email)
+    if prompt("Email address", "", prompt::Visibility::Shown, &mut email)
         .context("failed to prompt for email")?
         == prompt::Outcome::Cancelled
         || email.is_empty()
@@ -204,11 +229,16 @@ fn ask_email() -> anyhow::Result<Option<String>> {
     Ok(Some(email))
 }
 
-fn ask_master_password() -> anyhow::Result<Option<Zeroizing<String>>> {
+fn ask_master_password(again: bool, status: &str) -> anyhow::Result<Option<Zeroizing<String>>> {
     // Try to prevent leaking of the master password into memory via a large buffer
     let mut master_password = Zeroizing::new(String::with_capacity(1024));
     if prompt(
-        "Master password",
+        if again {
+            "Master password incorrect, try again"
+        } else {
+            "Master password"
+        },
+        status,
         prompt::Visibility::Hidden,
         &mut *master_password,
     )
@@ -237,6 +267,7 @@ mod prompt {
 
     pub(crate) fn prompt(
         msg: &str,
+        status: &str,
         visibility: Visibility,
         buf: &mut String,
     ) -> anyhow::Result<Outcome> {
@@ -245,6 +276,9 @@ mod prompt {
         rofi.stdin(process::Stdio::null())
             .stdout(process::Stdio::piped());
         rofi.arg("-p").arg(msg);
+        if !status.is_empty() {
+            rofi.arg("-mesg").arg(status);
+        }
         if visibility == Visibility::Hidden {
             rofi.arg("-password");
         }
@@ -275,16 +309,16 @@ mod prompt {
 
 use show_notification::show_notification;
 mod show_notification {
-    pub(crate) fn show_notification(notification: ipc::menu_request::Notification) {
-        if let Err(e) = inner(notification) {
+    pub(crate) fn show_notification(summary: String, image: Option<String>) {
+        if let Err(e) = inner(summary, image) {
             eprintln!("Warning: {}", e.context("failed to show notification"));
         }
     }
-    fn inner(notification: ipc::menu_request::Notification) -> anyhow::Result<()> {
+    fn inner(summary: String, image: Option<String>) -> anyhow::Result<()> {
         let mut builder = notify_rust::Notification::new();
         builder.icon("bitwarden");
-        builder.summary = notification.title;
-        if let Some(image) = notification.image {
+        builder.summary = summary;
+        if let Some(image) = image {
             builder.hint(notify_rust::Hint::ImagePath(image));
         }
         builder.show().context("failed to show notification")?;
@@ -292,7 +326,6 @@ mod show_notification {
     }
 
     use anyhow::Context as _;
-    use rofi_bw_common::ipc;
 }
 
 mod daemon;

@@ -1,6 +1,8 @@
 pub(crate) struct Session<'http, 'client_id> {
     http: &'http ureq::Agent,
     client_id: &'client_id str,
+    email: Box<str>,
+    prelogin: Prelogin,
     master_key: MasterKey,
     token: auth::Token,
     account_data: String,
@@ -27,10 +29,10 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
             None => None,
         };
 
-        let (master_key, token) = match validated_cache {
+        let (prelogin, master_key, token) = match validated_cache {
             Some((prelogin, token)) => {
                 let master_key = auth::master_key(&prelogin, email, master_password);
-                (master_key, token)
+                (prelogin, master_key, token)
             }
             None => {
                 let (prelogin, master_key, token) = auth::login(
@@ -49,7 +51,7 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
                         prelogin: &prelogin,
                     },
                 );
-                (master_key, token)
+                (prelogin, master_key, token)
             }
         };
 
@@ -58,6 +60,8 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
         Ok(Self {
             http,
             client_id,
+            email: email.into(),
+            prelogin,
             master_key,
             token,
             account_data,
@@ -84,6 +88,10 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
         self.account_data = self.client()?.sync()?;
 
         Ok(())
+    }
+
+    pub(crate) fn is_correct_master_password(&self, master_password: &str) -> bool {
+        auth::master_key(&self.prelogin, &*self.email, master_password) == self.master_key
     }
 
     pub(crate) fn master_key(&self) -> &MasterKey {
@@ -129,6 +137,7 @@ impl std::error::Error for ResyncError {
 }
 
 use crate::auth;
+use crate::auth::Prelogin;
 use crate::bitwarden_api;
 use crate::cache;
 use crate::cache::CacheRef;

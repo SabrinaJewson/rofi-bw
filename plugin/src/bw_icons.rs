@@ -35,12 +35,12 @@ impl BwIcons {
             let host = host.clone();
             let http = self.http.clone();
             move || {
-                if let Some(image) = disk_cache.load(&*host)? {
-                    let image = fs::file::open::read_only(image)?;
+                if let Some(image_file) = disk_cache.load(&*host)? {
+                    let image_file = fs::file::open::read_only(image_file)?;
 
-                    let image = BufReader::new(image);
+                    let mut image_file = BufReader::new(image_file);
 
-                    let image = image::io::Reader::new(image)
+                    let image = image::io::Reader::new(&mut image_file)
                         .with_guessed_format()
                         .context("failed to guess format")?
                         .decode()
@@ -48,7 +48,7 @@ impl BwIcons {
 
                     let image = rayon::scope(|_| CairoImageData::from_image(&image))?;
 
-                    return Ok(Some(image));
+                    return Ok(Some((image_file.into_inner().into_path(), image)));
                 }
 
                 let runtime = tokio::runtime::Handle::current();
@@ -64,7 +64,7 @@ impl BwIcons {
                     };
 
                 let mut cairo_image: Option<anyhow::Result<_>> = None;
-                rayon::in_place_scope(|s| {
+                let path = rayon::in_place_scope(|s| {
                     s.spawn(|_| {
                         cairo_image = Some((|| {
                             let image = image::load_from_memory(&*bytes)
@@ -76,22 +76,32 @@ impl BwIcons {
 
                     disk_cache.store(&*host, &*bytes, expires)
                 })?;
-                Ok(Some(cairo_image.unwrap()?))
+                Ok(Some((path, cairo_image.unwrap()?)))
             }
         });
 
         self.icons.insert(host, Icon::Waiting(handle));
     }
 
-    pub fn get(&mut self, host: &str) -> Option<cairo::Surface> {
+    pub fn surface(&mut self, host: &str) -> Option<cairo::Surface> {
+        let icon = self.get(host)?;
+        Some((**icon.surface.get_mut()).clone())
+    }
+
+    pub fn fs_path(&mut self, host: &str) -> Option<&fs::Path> {
+        let icon = self.get(host)?;
+        Some(&*icon.path)
+    }
+
+    fn get(&mut self, host: &str) -> Option<&mut LoadedIcon> {
         let icon = self.icons.get_mut(host).unwrap();
 
         if let Icon::Waiting(handle) = icon {
             let task_result = poll_future_once(handle)?;
 
             let surface_result: anyhow::Result<_> = (|| {
-                let image_data = match task_result.unwrap()? {
-                    Some(image_data) => image_data,
+                let (path, image_data) = match task_result.unwrap()? {
+                    Some(data) => data,
                     None => return Ok(None),
                 };
 
@@ -104,11 +114,14 @@ impl BwIcons {
                 )
                 .context("failed to create image surface")?;
 
-                Ok(Some(surface))
+                Ok(Some((path, surface)))
             })();
 
             *icon = Icon::Complete(match surface_result {
-                Ok(Some(surface)) => Some(SyncWrapper::new(surface)),
+                Ok(Some((path, surface))) => Some(LoadedIcon {
+                    path,
+                    surface: SyncWrapper::new(surface),
+                }),
                 Ok(None) => None,
                 Err(e) => {
                     let context = format!("failed to retrieve icon {host}");
@@ -120,18 +133,19 @@ impl BwIcons {
 
         match icon {
             Icon::Waiting(_) => unreachable!(),
-            Icon::Complete(surface) => surface.as_mut().map(|s| (**s.get_mut()).clone()),
+            Icon::Complete(icon) => icon.as_mut(),
         }
-    }
-
-    pub fn fs_path(&self, host: &str) -> Option<fs::PathBuf> {
-        self.disk_cache.load(host).ok().flatten()
     }
 }
 
 enum Icon {
-    Waiting(tokio::task::JoinHandle<anyhow::Result<Option<CairoImageData>>>),
-    Complete(Option<SyncWrapper<cairo::ImageSurface>>),
+    Waiting(tokio::task::JoinHandle<anyhow::Result<Option<(fs::PathBuf, CairoImageData)>>>),
+    Complete(Option<LoadedIcon>),
+}
+
+struct LoadedIcon {
+    path: fs::PathBuf,
+    surface: SyncWrapper<cairo::ImageSurface>,
 }
 
 struct CairoImageData {

@@ -8,7 +8,6 @@ pub mod handshake {
     pub struct Handshake<MasterKeyT, DataT> {
         pub master_key: MasterKeyT,
         pub data: DataT,
-        pub notify_copy: bool,
     }
 
     pub fn write<W, MasterKeyT, DataT>(
@@ -74,27 +73,32 @@ pub mod handshake {
 pub use menu_request::MenuRequest;
 /// A request from the menu to the parent process.
 pub mod menu_request {
+    // Initially I tried to make this type generic, but I’ve since given up since it’s just too
+    // much work carrying around 5 generic parameters everywhere and dealing with type inference
+    // and type unification errors.
     #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
-    pub enum MenuRequest<CopyData> {
+    pub enum MenuRequest {
         Copy {
-            data: CopyData,
-            notification: Option<Notification>,
+            /// Used in notifications and for the reprompt message
+            name: String,
+            data: String,
+            /// Used in notifications
+            image_path: Option<String>,
+            reprompt: bool,
+            /// When a reprompt is cancelled the old menu state should be restored.
+            menu_state: MenuState,
         },
         Sync {
-            filter: String,
+            menu_state: MenuState,
         },
         Lock,
         LogOut,
         Exit,
     }
 
-    pub fn write<W, CopyData>(
-        mut writer: W,
-        menu_request: &MenuRequest<CopyData>,
-    ) -> Result<(), WriteError>
+    pub fn write<W>(mut writer: W, menu_request: &MenuRequest) -> Result<(), WriteError>
     where
         W: io::Write,
-        CopyData: Borrow<str> + bincode::Encode,
     {
         let config = bincode::config::standard();
         bincode::encode_into_std_write(menu_request, &mut writer, config).map_err(WriteError)?;
@@ -116,7 +120,7 @@ pub mod menu_request {
         }
     }
 
-    pub fn read<R: io::BufRead>(mut reader: R) -> Result<MenuRequest<String>, ReadError> {
+    pub fn read<R: io::BufRead>(mut reader: R) -> Result<MenuRequest, ReadError> {
         let config = bincode::config::standard();
         bincode::decode_from_std_read(&mut reader, config).map_err(ReadError)
     }
@@ -136,19 +140,15 @@ pub mod menu_request {
         }
     }
 
-    use std::borrow::Borrow;
+    /// Old state of the menu that can be restored.
+    #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+    pub struct MenuState {
+        pub filter: String,
+    }
+
     use std::error::Error;
     use std::fmt;
     use std::fmt::Display;
     use std::fmt::Formatter;
     use std::io;
-
-    pub use notification::Notification;
-    mod notification {
-        #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
-        pub struct Notification {
-            pub title: String,
-            pub image: Option<String>,
-        }
-    }
 }

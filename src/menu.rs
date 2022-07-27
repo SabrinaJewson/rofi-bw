@@ -4,7 +4,7 @@ pub(crate) fn run(
     rofi_options: &config::RofiOptions,
     display: &str,
     filter: &str,
-) -> anyhow::Result<ipc::MenuRequest<String>> {
+) -> anyhow::Result<ipc::MenuRequest> {
     let (parent_stream, child_stream) =
         UnixStream::pair().context("failed to create IPC channel")?;
 

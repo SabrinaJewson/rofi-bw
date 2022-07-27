@@ -45,13 +45,9 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
 
         let res = (|| {
             let pipe = BufReader::new(pipe.insert(get_pipe()?));
-            let ipc::Handshake {
-                master_key,
-                data,
-                notify_copy,
-            } = ipc::handshake::read(pipe)?;
+            let ipc::Handshake { master_key, data } = ipc::handshake::read(pipe)?;
             let data = serde_json::from_slice(&*data).context("failed to read vault data")?;
-            Initialized::new(&master_key, data, notify_copy)
+            Initialized::new(&master_key, data)
         })();
 
         let state = res
@@ -97,7 +93,7 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                 rofi_mode::Action::Exit
             }
             rofi_mode::Event::Ok { alt: _, selected } => match &mut self.state {
-                State::Initialized(initialized) => match initialized.ok(selected) {
+                State::Initialized(initialized) => match initialized.ok(selected, input) {
                     Some(request) => {
                         send_request(&mut self.pipe, &request);
                         rofi_mode::Action::Exit
@@ -123,7 +119,9 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                 };
                 let request = match keybind.action {
                     keybinds::Action::Sync => ipc::MenuRequest::Sync {
-                        filter: input.to_string(),
+                        menu_state: ipc::menu_request::MenuState {
+                            filter: input.to_string(),
+                        },
                     },
                     keybinds::Action::Lock => ipc::MenuRequest::Lock,
                     keybinds::Action::LogOut => ipc::MenuRequest::LogOut,
@@ -217,7 +215,7 @@ mod get_pipe {
     use std::sync::atomic::AtomicBool;
 }
 
-fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &ipc::MenuRequest<String>) {
+fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &MenuRequest) {
     if let Some(pipe) = pipe {
         let res = (|| {
             ipc::menu_request::write(&mut *pipe, request)?;
@@ -261,6 +259,7 @@ mod disk_cache;
 
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
+use rofi_bw_common::ipc::MenuRequest;
 use rofi_bw_common::keybinds;
 use rofi_mode::cairo;
 use std::io::BufReader;

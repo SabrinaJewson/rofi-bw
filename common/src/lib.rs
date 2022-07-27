@@ -42,8 +42,22 @@ mod master_key {
         }
     }
 
+    impl PartialEq for MasterKey {
+        fn eq(&self, other: &Self) -> bool {
+            // constant-time equality, just to be safe
+            self.ct_eq(other).into()
+        }
+    }
+
+    impl ConstantTimeEq for MasterKey {
+        fn ct_eq(&self, other: &Self) -> subtle::Choice {
+            self.0.ct_eq(&*other.0)
+        }
+    }
+
     use bincode::de::read::Reader as _;
     use bincode::enc::write::Writer as _;
+    use subtle::ConstantTimeEq;
     use zeroize::Zeroizing;
 }
 

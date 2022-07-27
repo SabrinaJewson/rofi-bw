@@ -45,24 +45,31 @@ impl<Dir: Borrow<fs::Path>> DiskCache<Dir> {
         key: &str,
         content: &[u8],
         expires: SystemTime,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<fs::PathBuf> {
         self.store_inner(key, content, expires)
             .with_context(|| format!("failed to store cache file {key}"))
     }
 
-    fn store_inner(&self, key: &str, content: &[u8], expires: SystemTime) -> anyhow::Result<()> {
+    fn store_inner(
+        &self,
+        key: &str,
+        content: &[u8],
+        expires: SystemTime,
+    ) -> anyhow::Result<fs::PathBuf> {
         let dir = self.dir.borrow().join(key);
 
         let expires_secs = match expires.duration_since(SystemTime::UNIX_EPOCH) {
             Ok(duration) => duration.as_secs(),
-            // If it's before the Unix epoch it’s already expired
-            Err(_) => return Ok(()),
+            // Saturate before the Unix epoch to zero seconds
+            Err(_) => 0,
         };
 
-        fs::overwrite::with(dir.join("data"), content)?;
+        let data_path = dir.join("data");
+
+        fs::overwrite::with(&*data_path, content)?;
         fs::overwrite::with(dir.join("expires"), &expires_secs.to_le_bytes())?;
 
-        Ok(())
+        Ok(data_path)
     }
 }
 

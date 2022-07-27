@@ -2,7 +2,6 @@ pub(crate) struct Initialized {
     key: SymmetricKey,
     entries: Vec<Entry>,
     icons: BwIcons,
-    notify_copy: bool,
     error_message: String,
 }
 
@@ -10,15 +9,12 @@ struct Entry {
     id: Uuid,
     name: String,
     password: CipherString<String>,
+    reprompt: bool,
     host: Option<Arc<str>>,
 }
 
 impl Initialized {
-    pub(crate) fn new(
-        master_key: &MasterKey,
-        data: Data,
-        notify_copy: bool,
-    ) -> anyhow::Result<Self> {
+    pub(crate) fn new(master_key: &MasterKey, data: Data) -> anyhow::Result<Self> {
         let mut icons = BwIcons::new()?;
 
         let key = data.profile.key.decrypt(master_key)?;
@@ -74,6 +70,7 @@ impl Initialized {
                 id: cipher.id,
                 name,
                 password,
+                reprompt: cipher.reprompt,
                 host,
             });
         }
@@ -84,7 +81,6 @@ impl Initialized {
             key,
             entries,
             icons,
-            notify_copy,
             error_message: String::new(),
         })
     }
@@ -108,10 +104,14 @@ impl Initialized {
 
     pub(crate) fn entry_icon(&mut self, line: usize) -> Option<cairo::Surface> {
         let host = self.entries[line].host.as_deref()?;
-        self.icons.get(host)
+        self.icons.surface(host)
     }
 
-    pub(crate) fn ok(&mut self, line: usize) -> Option<ipc::MenuRequest<String>> {
+    pub(crate) fn ok(
+        &mut self,
+        line: usize,
+        input: &mut rofi_mode::String,
+    ) -> Option<ipc::MenuRequest> {
         let entry = &self.entries[line];
 
         let password = match entry.password.decrypt(&self.key) {
@@ -125,15 +125,18 @@ impl Initialized {
         };
 
         Some(ipc::MenuRequest::Copy {
+            name: entry.name.clone(),
             data: password,
-            notification: self.notify_copy.then(|| ipc::menu_request::Notification {
-                title: format!("copied {} password", entry.name),
-                image: entry
-                    .host
-                    .as_deref()
-                    .and_then(|host| self.icons.fs_path(host))
-                    .and_then(|path| path.into_os_string().into_string().ok()),
-            }),
+            image_path: entry
+                .host
+                .as_deref()
+                .and_then(|host| self.icons.fs_path(host))
+                .and_then(fs::Path::to_str)
+                .map(str::to_owned),
+            reprompt: entry.reprompt,
+            menu_state: ipc::menu_request::MenuState {
+                filter: input.to_string(),
+            },
         })
     }
 }
@@ -146,6 +149,7 @@ use crate::symmetric_key::SymmetricKey;
 use crate::BwIcons;
 use anyhow::anyhow;
 use anyhow::Context as _;
+use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
 use rofi_mode::cairo;
