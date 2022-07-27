@@ -1,113 +1,135 @@
-pub(crate) fn prelogin(http: &ureq::Agent, email: &str) -> Result<Prelogin, PreloginError> {
-    prelogin_inner(http, email).map_err(|kind| PreloginError {
-        kind,
-        email: email.into(),
-    })
-}
-
-fn prelogin_inner(http: &ureq::Agent, email: &str) -> Result<Prelogin, PreloginErrorKind> {
-    #[derive(Serialize)]
-    struct Body<'email> {
-        email: &'email str,
+pub(crate) use prelogin::prelogin;
+pub(crate) use prelogin::Pbkdf2Algorithm;
+pub(crate) use prelogin::Prelogin;
+mod prelogin {
+    pub(crate) fn prelogin(http: &ureq::Agent, email: &str) -> Result<Prelogin, Error> {
+        inner(http, email).map_err(|kind| Error {
+            kind,
+            email: email.into(),
+        })
     }
 
-    http.post("https://vault.bitwarden.com/api/accounts/prelogin")
-        .send_json(Body { email })
-        .map_err(|e| PreloginErrorKind::Http(Box::new(e)))?
-        .into_json()
-        .map_err(PreloginErrorKind::Body)
-}
+    fn inner(http: &ureq::Agent, email: &str) -> Result<Prelogin, ErrorKind> {
+        #[derive(Serialize)]
+        struct Body<'email> {
+            email: &'email str,
+        }
 
-#[derive(Debug)]
-pub(crate) struct PreloginError {
-    kind: PreloginErrorKind,
-    email: Box<str>,
-}
-
-impl Display for PreloginError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "failed to download prelogin data for account {}",
-            self.email
-        )
+        http.post("https://vault.bitwarden.com/api/accounts/prelogin")
+            .send_json(Body { email })
+            .map_err(|e| ErrorKind::Http(Box::new(e)))?
+            .into_json()
+            .map_err(ErrorKind::Body)
     }
-}
 
-impl std::error::Error for PreloginError {
-    fn source(&self) -> Option<&(dyn 'static + std::error::Error)> {
-        match &self.kind {
-            PreloginErrorKind::Http(e) => Some(e),
-            PreloginErrorKind::Body(e) => Some(e),
+    #[derive(Debug)]
+    pub(crate) struct Error {
+        kind: ErrorKind,
+        email: Box<str>,
+    }
+
+    impl Display for Error {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "failed to download prelogin data for account {}",
+                self.email
+            )
         }
     }
-}
 
-#[derive(Debug)]
-pub(crate) enum PreloginErrorKind {
-    Http(Box<ureq::Error>),
-    Body(io::Error),
-}
-
-#[derive(Debug)]
-pub(crate) enum Prelogin {
-    Pbkdf2 {
-        algorithm: Pbkdf2Algorithm,
-        iterations: NonZeroU32,
-    },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Pbkdf2Algorithm {
-    Sha256,
-}
-
-impl Pbkdf2Algorithm {
-    fn function(self) -> fn(&[u8], &[u8], u32, &mut [u8]) {
-        match self {
-            Self::Sha256 => pbkdf2::<Hmac<Sha256>>,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Prelogin {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Visitor;
-        impl<'de> de::Visitor<'de> for Visitor {
-            type Value = Prelogin;
-            fn expecting(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                f.write_str("prelogin data")
+    impl std::error::Error for Error {
+        fn source(&self) -> Option<&(dyn 'static + std::error::Error)> {
+            match &self.kind {
+                ErrorKind::Http(e) => Some(e),
+                ErrorKind::Body(e) => Some(e),
             }
-            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "snake_case")]
-                enum FirstKey {
-                    Kdf,
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) enum ErrorKind {
+        Http(Box<ureq::Error>),
+        Body(io::Error),
+    }
+
+    #[derive(Debug)]
+    pub(crate) enum Prelogin {
+        Pbkdf2 {
+            algorithm: Pbkdf2Algorithm,
+            iterations: NonZeroU32,
+        },
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub(crate) enum Pbkdf2Algorithm {
+        Sha256,
+    }
+
+    impl Pbkdf2Algorithm {
+        pub(crate) fn function(self) -> fn(&[u8], &[u8], u32, &mut [u8]) {
+            match self {
+                Self::Sha256 => pbkdf2::<Hmac<Sha256>>,
+            }
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Prelogin {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Visitor;
+            impl<'de> de::Visitor<'de> for Visitor {
+                type Value = Prelogin;
+                fn expecting(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                    f.write_str("prelogin data")
                 }
-
-                map.next_key::<FirstKey>()?
-                    .ok_or_else(|| de::Error::missing_field("Kdf"))?;
-
-                #[derive(Deserialize)]
-                struct Pbkdf2Opts {
-                    #[serde(rename = "kdfIterations")]
-                    iterations: NonZeroU32,
-                }
-
-                Ok(match map.next_value::<u32>()? {
-                    0 => {
-                        let opts = Pbkdf2Opts::deserialize(MapAccessDeserializer::new(map))?;
-                        Prelogin::Pbkdf2 {
-                            algorithm: Pbkdf2Algorithm::Sha256,
-                            iterations: opts.iterations,
-                        }
+                fn visit_map<A: de::MapAccess<'de>>(
+                    self,
+                    mut map: A,
+                ) -> Result<Self::Value, A::Error> {
+                    #[derive(Deserialize)]
+                    #[serde(rename_all = "snake_case")]
+                    enum FirstKey {
+                        Kdf,
                     }
-                    n => return Err(de::Error::custom(format_args!("unknown KDF number {n}"))),
-                })
+
+                    map.next_key::<FirstKey>()?
+                        .ok_or_else(|| de::Error::missing_field("Kdf"))?;
+
+                    #[derive(Deserialize)]
+                    struct Pbkdf2Opts {
+                        #[serde(rename = "kdfIterations")]
+                        iterations: NonZeroU32,
+                    }
+
+                    Ok(match map.next_value::<u32>()? {
+                        0 => {
+                            let opts = Pbkdf2Opts::deserialize(MapAccessDeserializer::new(map))?;
+                            Prelogin::Pbkdf2 {
+                                algorithm: Pbkdf2Algorithm::Sha256,
+                                iterations: opts.iterations,
+                            }
+                        }
+                        n => return Err(de::Error::custom(format_args!("unknown KDF number {n}"))),
+                    })
+                }
             }
+            deserializer.deserialize_map(Visitor)
         }
-        deserializer.deserialize_map(Visitor)
     }
+
+    use hmac::Hmac;
+    use pbkdf2::pbkdf2;
+    use serde::de;
+    use serde::de::value::MapAccessDeserializer;
+    use serde::Deserialize;
+    use serde::Deserializer;
+    use serde::Serialize;
+    use sha2::Sha256;
+    use std::fmt;
+    use std::fmt::Display;
+    use std::fmt::Formatter;
+    use std::io;
+    use std::num::NonZeroU32;
 }
 
 pub(crate) fn master_key(prelogin: &Prelogin, email: &str, master_password: &str) -> MasterKey {
@@ -410,21 +432,14 @@ fn to_lowercase_cow(s: &str) -> Cow<'_, str> {
 use anyhow::anyhow;
 use anyhow::Context as _;
 use bitflags::bitflags;
-use hmac::Hmac;
-use pbkdf2::pbkdf2;
 use rofi_bw_common::MasterKey;
 use serde::de;
-use serde::de::value::MapAccessDeserializer;
 use serde::Deserialize;
-use serde::Deserializer;
-use serde::Serialize;
-use sha2::Sha256;
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io;
-use std::num::NonZeroU32;
 use std::str;
 use std::time::Duration;
 use std::time::SystemTime;
