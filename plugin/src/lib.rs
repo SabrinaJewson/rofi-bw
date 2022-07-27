@@ -26,7 +26,7 @@ struct Mode<'rofi> {
 
 enum State {
     Initialized(Initialized),
-    Errored(Errored),
+    Errored(String),
 }
 
 impl Mode<'_> {
@@ -55,12 +55,12 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         })();
 
         let state = res
-            .map_err(Errored::new)
+            .map_err(error_status)
             .map_or_else(State::Errored, State::Initialized);
 
         api.set_display_name(match &state {
             State::Initialized(_) => Initialized::DISPLAY_NAME,
-            State::Errored(_) => Errored::DISPLAY_NAME,
+            State::Errored(_) => "Error",
         });
 
         let pipe = pipe.map(BufWriter::new);
@@ -157,14 +157,15 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
             }
         }
 
-        match &self.state {
-            State::Initialized(_) => {}
-            State::Errored(errored) => {
-                if !message.is_empty() {
-                    message.push_str("\n\n");
-                }
-                message.push_str(errored.message());
+        let error_message = match &self.state {
+            State::Initialized(_) => None,
+            State::Errored(errored) => Some(errored),
+        };
+        if let Some(error_message) = error_message {
+            if !message.is_empty() {
+                message.push_str("\n\n");
             }
+            message.push_str(error_message);
         }
 
         message
@@ -226,11 +227,18 @@ fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &ipc::MenuReq
     }
 }
 
+use error_status::error_status;
+mod error_status {
+    pub(crate) fn error_status(error: anyhow::Error) -> String {
+        let escaped = glib::markup_escape_text(&*format!("{error:?}"));
+        format!("<span foreground='red'>Error:</span> {escaped}")
+    }
+
+    use rofi_mode::pango::glib;
+}
+
 use initialized::Initialized;
 mod initialized;
-
-use errored::Errored;
-mod errored;
 
 use bw_icons::BwIcons;
 mod bw_icons;
