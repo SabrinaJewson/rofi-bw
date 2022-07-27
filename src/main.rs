@@ -103,7 +103,7 @@ fn try_main(
                 None => return Ok(()),
             };
 
-            Session::new(
+            Session::start(
                 &http,
                 project_dirs.cache_dir(),
                 &*client_id,

@@ -9,7 +9,7 @@ pub(crate) struct Session<'http, 'client_id> {
 }
 
 impl<'http, 'client_id> Session<'http, 'client_id> {
-    pub(crate) fn new(
+    pub(crate) fn start(
         http: &'http ureq::Agent,
         cache_dir: &fs::Path,
         client_id: &'client_id str,
