@@ -232,47 +232,65 @@ fn run_reprompt(session: &Session<'_, '_>, name: &str) -> anyhow::Result<bool> {
     })
 }
 
-fn ask_email() -> anyhow::Result<Option<String>> {
-    let mut email = String::new();
+use ask_email::ask_email;
+mod ask_email {
+    pub(crate) fn ask_email() -> anyhow::Result<Option<String>> {
+        let mut email = String::new();
 
-    let mut dmenu = process::Command::new("rofi");
-    dmenu.arg("-dmenu").stdin(process::Stdio::null());
-    dmenu.arg("-p").arg("Email address");
+        let mut dmenu = process::Command::new("rofi");
+        dmenu.arg("-dmenu").stdin(process::Stdio::null());
+        dmenu.arg("-p").arg("Email address");
 
-    let outcome = run_dmenu(dmenu, &mut email).context("failed to prompt for email")?;
+        let outcome = run_dmenu(dmenu, &mut email).context("failed to prompt for email")?;
 
-    if outcome == run_dmenu::Outcome::Cancelled || email.is_empty() {
-        return Ok(None);
+        if outcome == run_dmenu::Outcome::Cancelled || email.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(email))
     }
 
-    Ok(Some(email))
+    use crate::run_dmenu;
+    use anyhow::Context as _;
+    use std::process;
 }
 
-fn ask_master_password(again: bool, status: &str) -> anyhow::Result<Option<Zeroizing<String>>> {
-    // Try to prevent leaking of the master password into memory via a large buffer
-    let mut master_password = Zeroizing::new(String::with_capacity(1024));
+use ask_master_password::ask_master_password;
+mod ask_master_password {
+    pub(crate) fn ask_master_password(
+        again: bool,
+        status: &str,
+    ) -> anyhow::Result<Option<Zeroizing<String>>> {
+        // Try to prevent leaking of the master password into memory via a large buffer
+        let mut master_password = Zeroizing::new(String::with_capacity(1024));
 
-    let mut dmenu = process::Command::new("rofi");
-    dmenu.arg("-dmenu").stdin(process::Stdio::null());
-    let prompt = if again {
-        "Master password incorrect, try again"
-    } else {
-        "Master password"
-    };
-    dmenu.arg("-p").arg(prompt);
-    if !status.is_empty() {
-        dmenu.arg("-mesg").arg(status);
+        let mut dmenu = process::Command::new("rofi");
+        dmenu.arg("-dmenu").stdin(process::Stdio::null());
+        let prompt = if again {
+            "Master password incorrect, try again"
+        } else {
+            "Master password"
+        };
+        dmenu.arg("-p").arg(prompt);
+        if !status.is_empty() {
+            dmenu.arg("-mesg").arg(status);
+        }
+        dmenu.arg("-password");
+
+        let outcome = run_dmenu(dmenu, &mut *master_password)
+            .context("failed to prompt for master password")?;
+
+        if outcome == run_dmenu::Outcome::Cancelled || master_password.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(master_password))
     }
-    dmenu.arg("-password");
 
-    let outcome =
-        run_dmenu(dmenu, &mut *master_password).context("failed to prompt for master password")?;
-
-    if outcome == run_dmenu::Outcome::Cancelled || master_password.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(master_password))
+    use crate::run_dmenu;
+    use anyhow::Context as _;
+    use std::process;
+    use zeroize::Zeroizing;
 }
 
 use run_dmenu::run_dmenu;
@@ -370,4 +388,3 @@ use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
 use std::env;
 use std::process;
-use zeroize::Zeroizing;
