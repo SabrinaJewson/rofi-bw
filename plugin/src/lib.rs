@@ -97,10 +97,13 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                 rofi_mode::Action::Exit
             }
             rofi_mode::Event::Ok { alt: _, selected } => match &mut self.state {
-                State::Initialized(initialized) => {
-                    send_request(&mut self.pipe, &initialized.ok(selected));
-                    rofi_mode::Action::Exit
-                }
+                State::Initialized(initialized) => match initialized.ok(selected) {
+                    Some(request) => {
+                        send_request(&mut self.pipe, &request);
+                        rofi_mode::Action::Exit
+                    }
+                    None => rofi_mode::Action::Reload,
+                },
                 State::Errored(_) => panic!("this mode has no entries"),
             },
             rofi_mode::Event::Complete {
@@ -158,8 +161,8 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         }
 
         let error_message = match &self.state {
-            State::Initialized(_) => None,
-            State::Errored(errored) => Some(errored),
+            State::Initialized(initialized) => initialized.error(),
+            State::Errored(errored) => Some(&**errored),
         };
         if let Some(error_message) = error_message {
             if !message.is_empty() {
@@ -214,7 +217,7 @@ mod get_pipe {
     use std::sync::atomic::AtomicBool;
 }
 
-fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &ipc::MenuRequest<&str>) {
+fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &ipc::MenuRequest<String>) {
     if let Some(pipe) = pipe {
         let res = (|| {
             ipc::menu_request::write(&mut *pipe, request)?;

@@ -1,13 +1,15 @@
 pub(crate) struct Initialized {
+    key: SymmetricKey,
     entries: Vec<Entry>,
     icons: BwIcons,
     notify_copy: bool,
+    error_message: String,
 }
 
 struct Entry {
     id: Uuid,
     name: String,
-    password: Zeroizing<String>,
+    password: CipherString<String>,
     host: Option<Arc<str>>,
 }
 
@@ -42,11 +44,6 @@ impl Initialized {
                 .name
                 .decrypt(&key)
                 .with_context(|| format!("failed to decrypt name of cipher {id}"))?;
-
-            let password = password
-                .decrypt(&key)
-                .with_context(|| format!("failed to decryt password of `{name}`"))?;
-            let password = Zeroizing::new(password);
 
             let host = (|| {
                 let url = login.uri.as_ref()?.decrypt(&key).ok()?;
@@ -84,13 +81,22 @@ impl Initialized {
         entries.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
         Ok(Self {
+            key,
             entries,
             icons,
             notify_copy,
+            error_message: String::new(),
         })
     }
 
     pub(crate) const DISPLAY_NAME: &'static str = "bitwarden";
+
+    pub(crate) fn error(&self) -> Option<&str> {
+        if self.error_message.is_empty() {
+            return None;
+        }
+        Some(&*self.error_message)
+    }
 
     pub(crate) fn entries(&self) -> usize {
         self.entries.len()
@@ -105,10 +111,21 @@ impl Initialized {
         self.icons.get(host)
     }
 
-    pub(crate) fn ok(&mut self, line: usize) -> ipc::MenuRequest<&str> {
+    pub(crate) fn ok(&mut self, line: usize) -> Option<ipc::MenuRequest<String>> {
         let entry = &self.entries[line];
-        ipc::MenuRequest::Copy {
-            data: &**entry.password,
+
+        let password = match entry.password.decrypt(&self.key) {
+            Ok(password) => password,
+            Err(error) => {
+                self.error_message = error_status(
+                    anyhow!(error).context(format!("failed to decrypt password of {}", entry.name)),
+                );
+                return None;
+            }
+        };
+
+        Some(ipc::MenuRequest::Copy {
+            data: password,
             notification: self.notify_copy.then(|| ipc::menu_request::Notification {
                 title: format!("copied {} password", entry.name),
                 image: entry
@@ -117,13 +134,17 @@ impl Initialized {
                     .and_then(|host| self.icons.fs_path(host))
                     .and_then(|path| path.into_os_string().into_string().ok()),
             }),
-        }
+        })
     }
 }
 
+use crate::cipher_string::CipherString;
 use crate::data::CipherData;
 use crate::data::Data;
+use crate::error_status::error_status;
+use crate::symmetric_key::SymmetricKey;
 use crate::BwIcons;
+use anyhow::anyhow;
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
@@ -131,4 +152,3 @@ use rofi_mode::cairo;
 use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
-use zeroize::Zeroizing;
