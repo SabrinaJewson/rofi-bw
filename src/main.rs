@@ -38,17 +38,12 @@ struct Args {
     config_file: Option<fs::PathBuf>,
 }
 
-// TODO: This function is too big, I need to refactor it
-#[allow(clippy::too_many_lines)]
 fn try_main(
     Args {
         filter,
         config_file,
     }: Args,
 ) -> anyhow::Result<()> {
-    let lib_dir = env::var_os("ROFI_BW_LIB_DIR")
-        .unwrap_or_else(|| "/usr/lib/rofi-bw:/usr/local/lib/rofi-bw".into());
-
     let project_dirs = ProjectDirs::from("", "", "rofi-bw").context("no home directory")?;
 
     let runtime_dir = project_dirs
@@ -80,153 +75,231 @@ fn try_main(
 
     let mut daemon = Daemon::bind(runtime_dir, auto_lock)?;
 
-    let mut data = Data::load(project_dirs.data_dir())?;
-
     let http = ureq::agent();
 
-    let mut clipboard = Clipboard::new().context("failed to open clipboard")?;
+    let mut session_manager =
+        SessionManager::new(&http, &project_dirs, &*client_id, device_type, device_name)?;
 
-    loop {
-        if data.email.is_none() {
-            data.email = Some(match ask_email()? {
-                Some(email) => email,
-                None => return Ok(()),
-            });
-            data.store()?;
-        }
-        let email = data.email.as_ref().unwrap();
+    let mut menu_opts = MenuOpts {
+        lib_dir: env::var_os("ROFI_BW_LIB_DIR")
+            .unwrap_or_else(|| "/usr/lib/rofi-bw:/usr/local/lib/rofi-bw".into()),
+        rofi_options,
+        copy_notification,
+        clipboard: Clipboard::new().context("failed to open clipboard")?,
+    };
 
-        let mut again = false;
-        let session = loop {
-            let keybinds = &[Keybind {
-                combination: "Control+o",
-                action: (),
-                description: "Log out",
-            }];
-            let master_password = match ask_master_password(again, "", keybinds)? {
-                ask_master_password::Outcome::Ok(master_password) => master_password,
-                ask_master_password::Outcome::Cancelled => return Ok(()),
-                ask_master_password::Outcome::Custom(&()) => {
-                    data.email = None;
-                    data.store()?;
-                    break None;
-                }
-            };
-
-            let result = Session::start(
-                &http,
-                project_dirs.cache_dir(),
-                &*client_id,
-                auth::Device {
-                    name: &*device_name,
-                    identifier: data.device_id,
-                    r#type: device_type,
-                },
-                &*email,
-                &**master_password,
-            );
-
-            match result {
-                Ok(session) => break Some(session),
-                Err(session::StartError::Login(auth::login::Error {
-                    kind: auth::login::ErrorKind::InvalidCredentials(_),
-                    ..
-                })) => {}
-                Err(e) => return Err(e.into()),
-            }
-
-            again = true;
-        };
-        let mut session = match session {
-            Some(session) => session,
-            None => continue,
-        };
-
+    while let Some(mut session) = session_manager.start_session()? {
         loop {
-            enum AfterMenu {
-                ShowMenuAgain {
-                    menu_state: ipc::menu_request::MenuState,
-                },
-                ContinueServing,
-                UnlockAgain,
-                StopServing,
-            }
-
-            let res: anyhow::Result<_> = (|| {
-                let handshake = ipc::Handshake {
-                    master_key: session.master_key(),
-                    data: session.account_data().as_bytes(),
-                };
-
-                let res = menu::run(
-                    &*lib_dir,
-                    &handshake,
-                    &rofi_options,
-                    &*request.display,
-                    &*request.filter,
-                )?;
-
-                Ok(match res {
-                    ipc::MenuRequest::Copy {
-                        name,
-                        data,
-                        image_path,
-                        reprompt,
-                        menu_state,
-                    } => {
-                        if reprompt && !run_reprompt(&session, &*name)? {
-                            return Ok(AfterMenu::ShowMenuAgain { menu_state });
-                        }
-
-                        clipboard
-                            .set_text(data)
-                            .context("failed to set clipboard content")?;
-
-                        if copy_notification {
-                            show_notification(format!("copied {name} password"), image_path);
-                        }
-
-                        AfterMenu::ContinueServing
-                    }
-                    ipc::MenuRequest::Sync { menu_state } => match session.resync() {
-                        Ok(()) => AfterMenu::ShowMenuAgain { menu_state },
-                        Err(session::ResyncError::Refresh(
-                            auth::refresh::Error::SessionExpired(_),
-                        )) => AfterMenu::UnlockAgain,
-                        Err(e) => return Err(e.into()),
-                    },
-                    ipc::MenuRequest::Lock => AfterMenu::StopServing,
-                    ipc::MenuRequest::LogOut => {
-                        request.filter.clear();
-                        data.email = None;
-                        data.store()?;
-                        AfterMenu::UnlockAgain
-                    }
-                    ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
-                })
-            })();
-
-            let after_menu = res.unwrap_or_else(|e| {
-                report_error(e.context("failed to run menu").as_ref());
-                AfterMenu::ContinueServing
-            });
-
+            let after_menu = show_menu(
+                &mut session,
+                &mut menu_opts,
+                &*request.display,
+                &*request.filter,
+            );
             match after_menu {
-                AfterMenu::ShowMenuAgain { menu_state } => {
+                AfterMenu::ShowMenuAgain {
+                    after_unlock,
+                    menu_state,
+                } => {
                     request.filter = menu_state.filter;
-                    continue;
+                    if after_unlock {
+                        break;
+                    }
                 }
-                AfterMenu::ContinueServing => {}
-                AfterMenu::UnlockAgain => break,
+                AfterMenu::ContinueServing => match daemon.wait() {
+                    daemon::Request::ShowMenu(new) => request = new,
+                    daemon::Request::Quit => return Ok(()),
+                },
+                AfterMenu::LogOut => {
+                    request.filter.clear();
+                    // TODO: check errors
+                    session_manager.log_out()?;
+                    break;
+                }
                 AfterMenu::StopServing => return Ok(()),
-            }
-
-            match daemon.wait() {
-                daemon::Request::ShowMenu(new) => request = new,
-                daemon::Request::Quit => return Ok(()),
             }
         }
     }
+
+    Ok(())
+}
+
+struct SessionManager<'http, 'dirs, 'client_id> {
+    http: &'http ureq::Agent,
+    project_dirs: &'dirs ProjectDirs,
+    data: Data,
+    client_id: &'client_id str,
+    device_type: auth::DeviceType,
+    device_name: String,
+}
+
+impl<'http, 'dirs, 'client_id> SessionManager<'http, 'dirs, 'client_id> {
+    fn new(
+        http: &'http ureq::Agent,
+        project_dirs: &'dirs ProjectDirs,
+        client_id: &'client_id str,
+        device_type: auth::DeviceType,
+        device_name: String,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            http,
+            project_dirs,
+            data: Data::load(project_dirs.data_dir())?,
+            client_id,
+            device_type,
+            device_name,
+        })
+    }
+
+    fn start_session(&mut self) -> anyhow::Result<Option<Session<'http, 'client_id>>> {
+        loop {
+            if self.data.email.is_none() {
+                self.data.email = Some(match ask_email()? {
+                    Some(email) => email,
+                    None => return Ok(None),
+                });
+                self.data.store()?;
+            }
+            let email = self.data.email.as_ref().unwrap();
+
+            let mut again = false;
+            loop {
+                let keybinds = &[Keybind {
+                    combination: "Control+o",
+                    action: (),
+                    description: "Log out",
+                }];
+                let master_password = match ask_master_password(again, "", keybinds)? {
+                    ask_master_password::Outcome::Ok(master_password) => master_password,
+                    ask_master_password::Outcome::Cancelled => return Ok(None),
+                    ask_master_password::Outcome::Custom(&()) => {
+                        self.log_out()?;
+                        break;
+                    }
+                };
+
+                let result = Session::start(
+                    self.http,
+                    self.project_dirs.cache_dir(),
+                    self.client_id,
+                    auth::Device {
+                        name: &*self.device_name,
+                        identifier: self.data.device_id,
+                        r#type: self.device_type,
+                    },
+                    &*email,
+                    &**master_password,
+                );
+
+                match result {
+                    Ok(session) => return Ok(Some(session)),
+                    Err(session::StartError::Login(auth::login::Error {
+                        kind: auth::login::ErrorKind::InvalidCredentials(_),
+                        ..
+                    })) => {}
+                    Err(e) => return Err(e.into()),
+                }
+
+                again = true;
+            }
+        }
+    }
+
+    fn log_out(&mut self) -> anyhow::Result<()> {
+        self.data.email = None;
+        self.data.store().context("failed to log out")?;
+        Ok(())
+    }
+}
+
+enum AfterMenu {
+    ShowMenuAgain {
+        after_unlock: bool,
+        menu_state: ipc::menu_request::MenuState,
+    },
+    ContinueServing,
+    LogOut,
+    StopServing,
+}
+
+struct MenuOpts {
+    lib_dir: OsString,
+    rofi_options: config::RofiOptions,
+    copy_notification: bool,
+    clipboard: Clipboard,
+}
+
+fn show_menu(
+    session: &mut Session<'_, '_>,
+    opts: &mut MenuOpts,
+    display: &str,
+    filter: &str,
+) -> AfterMenu {
+    try_show_menu(session, opts, display, filter).unwrap_or_else(|e| {
+        report_error(e.context("failed to run menu").as_ref());
+        AfterMenu::ContinueServing
+    })
+}
+
+fn try_show_menu<'http, 'client_id>(
+    session: &mut Session<'http, 'client_id>,
+    opts: &mut MenuOpts,
+    display: &str,
+    filter: &str,
+) -> anyhow::Result<AfterMenu> {
+    let handshake = ipc::Handshake {
+        master_key: session.master_key(),
+        data: session.account_data().as_bytes(),
+    };
+
+    let res = menu::run(
+        &*opts.lib_dir,
+        &handshake,
+        &opts.rofi_options,
+        display,
+        filter,
+    )?;
+
+    Ok(match res {
+        ipc::MenuRequest::Copy {
+            name,
+            data,
+            image_path,
+            reprompt,
+            menu_state,
+        } => {
+            if reprompt && !run_reprompt(session, &*name)? {
+                return Ok(AfterMenu::ShowMenuAgain {
+                    after_unlock: false,
+                    menu_state,
+                });
+            }
+
+            opts.clipboard
+                .set_text(data)
+                .context("failed to set clipboard content")?;
+
+            if opts.copy_notification {
+                show_notification(format!("copied {name} password"), image_path);
+            }
+
+            AfterMenu::ContinueServing
+        }
+        ipc::MenuRequest::Sync { menu_state } => {
+            let after_unlock = match session.resync() {
+                Ok(()) => false,
+                Err(session::ResyncError::Refresh(auth::refresh::Error::SessionExpired(_))) => true,
+                Err(e) => return Err(e.into()),
+            };
+            AfterMenu::ShowMenuAgain {
+                after_unlock,
+                menu_state,
+            }
+        }
+        ipc::MenuRequest::Lock => AfterMenu::StopServing,
+        ipc::MenuRequest::LogOut => AfterMenu::LogOut,
+        ipc::MenuRequest::Exit => AfterMenu::ContinueServing,
+    })
 }
 
 fn run_reprompt(session: &Session<'_, '_>, name: &str) -> anyhow::Result<bool> {
@@ -432,4 +505,5 @@ use rofi_bw_common::ipc;
 use rofi_bw_common::Keybind;
 use std::convert::Infallible;
 use std::env;
+use std::ffi::OsString;
 use std::process;
