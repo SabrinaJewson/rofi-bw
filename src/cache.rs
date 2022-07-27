@@ -12,16 +12,31 @@ pub(crate) struct CacheRef<'refresh_token, 'prelogin> {
 pub(crate) struct Key(Zeroizing<[u8; 32]>);
 
 impl Key {
-    pub(crate) fn new(email: &str, master_password: &str) -> anyhow::Result<Self> {
+    pub(crate) fn new(email: &str, master_password: &str) -> Result<Self, KeyError> {
         let hasher = Argon2::default();
         let mut key = Zeroizing::new([0; 32]);
         hasher
             .hash_password_into(master_password.as_bytes(), email.as_bytes(), &mut *key)
-            .context("failed to hash password")?;
+            .map_err(KeyError)?;
         Ok(Self(key))
     }
     fn cipher(&self) -> XChaCha20Poly1305 {
         XChaCha20Poly1305::new((&*self.0).into())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct KeyError(argon2::Error);
+
+impl Display for KeyError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("failed to hash password")
+    }
+}
+
+impl std::error::Error for KeyError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
     }
 }
 
@@ -163,6 +178,9 @@ use anyhow::Context as _;
 use argon2::Argon2;
 use chacha20poly1305::XChaCha20Poly1305;
 use rofi_bw_common::fs;
+use std::fmt;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::io;
 use std::num::NonZeroU32;
 use std::str;
