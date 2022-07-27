@@ -119,7 +119,9 @@ fn try_main(
 
         loop {
             enum AfterMenu {
-                ShowMenuAgain,
+                ShowMenuAgain {
+                    menu_state: ipc::menu_request::MenuState,
+                },
                 ContinueServing,
                 UnlockAgain,
                 StopServing,
@@ -148,8 +150,7 @@ fn try_main(
                         menu_state,
                     } => {
                         if reprompt && !run_reprompt(&session, &*name)? {
-                            request.filter = menu_state.filter;
-                            return Ok(AfterMenu::ShowMenuAgain);
+                            return Ok(AfterMenu::ShowMenuAgain { menu_state });
                         }
 
                         clipboard
@@ -162,16 +163,13 @@ fn try_main(
 
                         AfterMenu::ContinueServing
                     }
-                    ipc::MenuRequest::Sync { menu_state } => {
-                        request.filter = menu_state.filter;
-                        match session.resync() {
-                            Ok(()) => AfterMenu::ShowMenuAgain,
-                            Err(session::ResyncError::RefreshToken(
-                                auth::RefreshError::SessionExpired(_),
-                            )) => AfterMenu::UnlockAgain,
-                            Err(e) => return Err(e.into()),
-                        }
-                    }
+                    ipc::MenuRequest::Sync { menu_state } => match session.resync() {
+                        Ok(()) => AfterMenu::ShowMenuAgain { menu_state },
+                        Err(session::ResyncError::RefreshToken(
+                            auth::RefreshError::SessionExpired(_),
+                        )) => AfterMenu::UnlockAgain,
+                        Err(e) => return Err(e.into()),
+                    },
                     ipc::MenuRequest::Lock => AfterMenu::StopServing,
                     ipc::MenuRequest::LogOut => {
                         request.filter.clear();
@@ -189,7 +187,10 @@ fn try_main(
             });
 
             match after_menu {
-                AfterMenu::ShowMenuAgain => continue,
+                AfterMenu::ShowMenuAgain { menu_state } => {
+                    request.filter = menu_state.filter;
+                    continue;
+                }
                 AfterMenu::ContinueServing => {}
                 AfterMenu::UnlockAgain => break,
                 AfterMenu::StopServing => return Ok(()),
