@@ -1,7 +1,7 @@
 pub(crate) use prelogin::prelogin;
 pub(crate) use prelogin::Pbkdf2Algorithm;
 pub(crate) use prelogin::Prelogin;
-mod prelogin {
+pub(crate) mod prelogin {
     pub(crate) fn prelogin(http: &ureq::Agent, email: &str) -> Result<Prelogin, Error> {
         inner(http, email).map_err(|kind| Error {
             kind,
@@ -153,7 +153,7 @@ pub(crate) fn master_key(prelogin: &Prelogin, email: &str, master_password: &str
 }
 
 pub(crate) use login::login;
-mod login {
+pub(crate) mod login {
     pub(crate) fn login(
         http: &ureq::Agent,
         client_id: &str,
@@ -161,8 +161,22 @@ mod login {
         scopes: auth::Scopes,
         email: &str,
         master_password: &str,
-    ) -> anyhow::Result<(Prelogin, MasterKey, auth::Token)> {
-        let prelogin = prelogin(http, email)?;
+    ) -> Result<(Prelogin, MasterKey, auth::Token), Error> {
+        inner(http, client_id, device, scopes, email, master_password).map_err(|kind| Error {
+            kind,
+            email: email.into(),
+        })
+    }
+
+    fn inner(
+        http: &ureq::Agent,
+        client_id: &str,
+        device: auth::Device<'_>,
+        scopes: auth::Scopes,
+        email: &str,
+        master_password: &str,
+    ) -> Result<(Prelogin, MasterKey, auth::Token), ErrorKind> {
+        let prelogin = prelogin(http, email).map_err(ErrorKind::Prelogin)?;
         let master_key = master_key(&prelogin, email, master_password);
 
         const MASTER_PASSWORD_HASH_LEN: usize = 32;
@@ -211,38 +225,115 @@ mod login {
                         .encode_lower(&mut [0; uuid::fmt::Hyphenated::LENGTH]),
                 ),
                 ("deviceType", device_type),
-            ])
-            .map_err(|e| match e {
-                ureq::Error::Status(status, res) => match res.into_string() {
-                    Ok(body) => {
-                        #[derive(Deserialize)]
-                        struct ErrorResponse {
-                            #[serde(rename = "ErrorModel")]
-                            error_model: ErrorModel,
-                        }
-
-                        #[derive(Deserialize)]
-                        #[serde(rename_all = "PascalCase")]
-                        struct ErrorModel {
-                            message: String,
-                        }
-
-                        if let Ok(response) = serde_json::from_str::<ErrorResponse>(&body) {
-                            anyhow!("{}", response.error_model.message)
-                        } else {
-                            anyhow!("status {status}: body {body:?}")
-                        }
-                    }
-                    Err(e) => anyhow::Error::new(e)
-                        .context(format!("status {status} and error reading body")),
-                },
-                e @ ureq::Error::Transport(_) => anyhow::Error::new(e),
-            })
-            .context("failed to send token request")?
+            ])?
             .into_json::<AccessTokenResponse>()
-            .context("failed to read token response body")?;
+            .map_err(ErrorKind::Body)?;
 
         Ok((prelogin, master_key, response.into_token()))
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct Error {
+        pub(crate) kind: ErrorKind,
+        email: Box<str>,
+    }
+
+    #[derive(Debug)]
+    pub(crate) enum ErrorKind {
+        Prelogin(prelogin::Error),
+        Status(Status),
+        Transport(ureq::Transport),
+        Body(io::Error),
+    }
+
+    impl Display for Error {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "failed to log in to account {}", self.email)
+        }
+    }
+
+    impl std::error::Error for Error {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            match &self.kind {
+                ErrorKind::Prelogin(e) => Some(e),
+                ErrorKind::Status(e) => Some(e),
+                ErrorKind::Transport(e) => Some(e),
+                ErrorKind::Body(e) => Some(e),
+            }
+        }
+    }
+
+    impl From<ureq::Error> for ErrorKind {
+        fn from(error: ureq::Error) -> Self {
+            match error {
+                ureq::Error::Status(status, res) => {
+                    let body = match res.into_string() {
+                        Ok(body) => {
+                            #[derive(Deserialize)]
+                            struct ErrorResponse {
+                                #[serde(rename = "ErrorModel")]
+                                error_model: ErrorModel,
+                                error_desciption: String,
+                            }
+
+                            #[derive(Deserialize)]
+                            #[serde(rename_all = "PascalCase")]
+                            struct ErrorModel {
+                                message: String,
+                            }
+
+                            match serde_json::from_str::<ErrorResponse>(&body) {
+                                Ok(response)
+                                    if response.error_desciption
+                                        == "invalid_username_or_password" =>
+                                {
+                                    Body::InvalidCredentials
+                                }
+                                Ok(response) => Body::Message(response.error_model.message),
+                                Err(_) => Body::Other(body),
+                            }
+                        }
+                        Err(e) => Body::Error(e),
+                    };
+                    ErrorKind::Status(Status { code: status, body })
+                }
+                ureq::Error::Transport(e) => ErrorKind::Transport(e),
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct Status {
+        pub(crate) code: u16,
+        pub(crate) body: Body,
+    }
+
+    #[derive(Debug)]
+    pub(crate) enum Body {
+        InvalidCredentials,
+        Message(String),
+        Other(String),
+        Error(io::Error),
+    }
+
+    impl Display for Status {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            match &self.body {
+                Body::InvalidCredentials => f.write_str("invalid username or password; try again"),
+                Body::Message(e) => f.write_str(e),
+                Body::Other(s) => write!(f, "status {}; body {s:?}", self.code),
+                Body::Error(_) => write!(f, "status {} and error reading body", self.code),
+            }
+        }
+    }
+
+    impl std::error::Error for Status {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            match &self.body {
+                Body::Error(e) => Some(e),
+                _ => None,
+            }
+        }
     }
 
     use super::AccessTokenResponse;
@@ -250,10 +341,12 @@ mod login {
     use crate::auth::master_key;
     use crate::auth::prelogin;
     use crate::auth::Prelogin;
-    use anyhow::anyhow;
-    use anyhow::Context as _;
     use rofi_bw_common::MasterKey;
     use serde::Deserialize;
+    use std::fmt;
+    use std::fmt::Display;
+    use std::fmt::Formatter;
+    use std::io;
     use zeroize::Zeroizing;
 }
 
