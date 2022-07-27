@@ -19,12 +19,7 @@ pub(crate) fn run(
         rofi.arg("-filter").arg(filter);
     }
 
-    let mut arg_name_buf = String::new();
-    for (i, keybind) in rofi_bw_common::KEYBINDS.iter().enumerate() {
-        arg_name_buf.clear();
-        write!(arg_name_buf, "-kb-custom-{}", i + 1).unwrap();
-        rofi.arg(&*arg_name_buf).arg(keybind.combination);
-    }
+    rofi_bw_common::keybind::apply_to_command(&mut rofi, rofi_bw_common::MENU_KEYBINDS);
 
     let pipe_fd = child_stream.as_raw_fd();
     rofi.env(ipc::PIPE_FD_ENV_VAR, itoa::Buffer::new().format(pipe_fd));
@@ -139,7 +134,6 @@ use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
 use std::ffi::OsStr;
-use std::fmt::Write as _;
 use std::io;
 use std::io::BufReader;
 use std::io::BufWriter;

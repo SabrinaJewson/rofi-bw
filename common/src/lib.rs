@@ -63,16 +63,56 @@ mod master_key {
 
 pub mod ipc;
 
-pub use keybinds::{Keybind, KEYBINDS};
-pub mod keybinds {
-    pub struct Keybind {
+pub use keybind::Keybind;
+pub mod keybind {
+    pub struct Keybind<Action> {
         pub combination: &'static str,
         pub action: Action,
         pub description: &'static str,
     }
 
+    pub struct HelpMarkup<'keybinds, Action>(pub &'keybinds [Keybind<Action>]);
+
+    impl<Action> Display for HelpMarkup<'_, Action> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            for (i, keybind) in self.0.iter().enumerate() {
+                if i != 0 {
+                    f.write_str(" | ")?;
+                }
+                write!(f, "<b>{}</b>: {}", keybind.combination, keybind.description)?;
+            }
+            Ok(())
+        }
+    }
+
+    pub fn apply_to_command<Action>(command: &mut process::Command, keybinds: &[Keybind<Action>]) {
+        assert!(keybinds.len() <= 19);
+
+        let mut arg_name_buf = String::new();
+        for (i, keybind) in keybinds.iter().enumerate() {
+            arg_name_buf.clear();
+            write!(arg_name_buf, "-kb-custom-{}", i + 1).unwrap();
+            command.arg(&*arg_name_buf).arg(keybind.combination);
+        }
+    }
+
+    use std::fmt;
+    use std::fmt::Display;
+    use std::fmt::Formatter;
+    use std::fmt::Write as _;
+    use std::process;
+}
+
+pub use menu_keybinds::MENU_KEYBINDS;
+pub mod menu_keybinds {
+    pub enum Action {
+        Sync,
+        Lock,
+        LogOut,
+    }
+
     /// The keybindings, ordered by their custom command number.
-    pub const KEYBINDS: &[Keybind] = &[
+    pub const MENU_KEYBINDS: &[Keybind<Action>] = &[
         Keybind {
             combination: "Control+s",
             action: Action::Sync,
@@ -90,11 +130,7 @@ pub mod keybinds {
         },
     ];
 
-    pub enum Action {
-        Sync,
-        Lock,
-        LogOut,
-    }
+    use crate::Keybind;
 }
 
 pub mod fs;

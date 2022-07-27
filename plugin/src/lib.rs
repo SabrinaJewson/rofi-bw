@@ -113,18 +113,18 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                 number,
                 selected: _,
             } => {
-                let keybind = match rofi_bw_common::KEYBINDS.get(usize::from(number)) {
+                let keybind = match MENU_KEYBINDS.get(usize::from(number)) {
                     Some(keybind) => keybind,
                     None => return rofi_mode::Action::Reload,
                 };
                 let request = match keybind.action {
-                    keybinds::Action::Sync => ipc::MenuRequest::Sync {
+                    menu_keybinds::Action::Sync => ipc::MenuRequest::Sync {
                         menu_state: ipc::menu_request::MenuState {
                             filter: input.to_string(),
                         },
                     },
-                    keybinds::Action::Lock => ipc::MenuRequest::Lock,
-                    keybinds::Action::LogOut => ipc::MenuRequest::LogOut,
+                    menu_keybinds::Action::Lock => ipc::MenuRequest::Lock,
+                    menu_keybinds::Action::LogOut => ipc::MenuRequest::LogOut,
                 };
                 send_request(&mut self.pipe, &request);
                 rofi_mode::Action::Exit
@@ -146,16 +146,7 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         let mut message = rofi_mode::String::new();
 
         if self.pipe.is_some() {
-            for keybind in rofi_bw_common::KEYBINDS {
-                if !message.is_empty() {
-                    message.push_str(" | ");
-                }
-
-                message.push_str("<b>");
-                message.push_str(keybind.combination);
-                message.push_str("</b>: ");
-                message.push_str(keybind.description);
-            }
+            write!(message, "{}", keybind::HelpMarkup(MENU_KEYBINDS)).unwrap();
         }
 
         let error_message = match &self.state {
@@ -260,8 +251,11 @@ mod disk_cache;
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_bw_common::ipc::MenuRequest;
-use rofi_bw_common::keybinds;
+use rofi_bw_common::keybind;
+use rofi_bw_common::menu_keybinds;
+use rofi_bw_common::MENU_KEYBINDS;
 use rofi_mode::cairo;
+use std::fmt::Write as _;
 use std::io::BufReader;
 use std::io::BufWriter;
 use std::io::Write;
