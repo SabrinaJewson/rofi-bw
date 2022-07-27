@@ -241,6 +241,7 @@ pub(crate) mod login {
     #[derive(Debug)]
     pub(crate) enum ErrorKind {
         Prelogin(prelogin::Error),
+        InvalidCredentials(InvalidCredentials),
         Status(Status),
         Transport(ureq::Transport),
         Body(io::Error),
@@ -256,6 +257,7 @@ pub(crate) mod login {
         fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
             match &self.kind {
                 ErrorKind::Prelogin(e) => Some(e),
+                ErrorKind::InvalidCredentials(e) => Some(e),
                 ErrorKind::Status(e) => Some(e),
                 ErrorKind::Transport(e) => Some(e),
                 ErrorKind::Body(e) => Some(e),
@@ -273,7 +275,7 @@ pub(crate) mod login {
                             struct ErrorResponse {
                                 #[serde(rename = "ErrorModel")]
                                 error_model: ErrorModel,
-                                error_desciption: String,
+                                error_description: String,
                             }
 
                             #[derive(Deserialize)]
@@ -283,13 +285,12 @@ pub(crate) mod login {
                             }
 
                             match serde_json::from_str::<ErrorResponse>(&body) {
-                                Ok(response)
-                                    if response.error_desciption
-                                        == "invalid_username_or_password" =>
-                                {
-                                    Body::InvalidCredentials
+                                Ok(response) => {
+                                    if response.error_description == "invalid_username_or_password" {
+                                        return ErrorKind::InvalidCredentials(InvalidCredentials);
+                                    }
+                                    Body::Message(response.error_model.message)
                                 }
-                                Ok(response) => Body::Message(response.error_model.message),
                                 Err(_) => Body::Other(body),
                             }
                         }
@@ -303,14 +304,24 @@ pub(crate) mod login {
     }
 
     #[derive(Debug)]
+    pub(crate) struct InvalidCredentials;
+
+    impl Display for InvalidCredentials {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            f.write_str("invalid username or password; try again")
+        }
+    }
+
+    impl std::error::Error for InvalidCredentials {}
+
+    #[derive(Debug)]
     pub(crate) struct Status {
-        pub(crate) code: u16,
-        pub(crate) body: Body,
+        code: u16,
+        body: Body,
     }
 
     #[derive(Debug)]
-    pub(crate) enum Body {
-        InvalidCredentials,
+    enum Body {
         Message(String),
         Other(String),
         Error(io::Error),
@@ -319,7 +330,6 @@ pub(crate) mod login {
     impl Display for Status {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
             match &self.body {
-                Body::InvalidCredentials => f.write_str("invalid username or password; try again"),
                 Body::Message(e) => f.write_str(e),
                 Body::Other(s) => write!(f, "status {}; body {s:?}", self.code),
                 Body::Error(_) => write!(f, "status {} and error reading body", self.code),

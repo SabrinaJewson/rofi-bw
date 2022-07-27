@@ -96,14 +96,14 @@ fn try_main(
         }
         let email = data.email.as_ref().unwrap();
 
-        let mut session = {
-            // TODO: re-ask master password if incorrect
-            let master_password = match ask_master_password(false, "")? {
+        let mut again = false;
+        let mut session = loop {
+            let master_password = match ask_master_password(again, "")? {
                 Some(master_password) => master_password,
                 None => return Ok(()),
             };
 
-            Session::start(
+            let result = Session::start(
                 &http,
                 project_dirs.cache_dir(),
                 &*client_id,
@@ -114,7 +114,18 @@ fn try_main(
                 },
                 &*email,
                 &**master_password,
-            )?
+            );
+
+            match result {
+                Ok(session) => break session,
+                Err(session::StartError::Login(auth::login::Error {
+                    kind: auth::login::ErrorKind::InvalidCredentials(_),
+                    ..
+                })) => {}
+                Err(e) => return Err(e.into()),
+            }
+
+            again = true;
         };
 
         loop {
