@@ -155,18 +155,16 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         let mut message = rofi_mode::String::new();
 
         if self.pipe.is_some() {
-            write!(message, "{}", keybind::HelpMarkup(MENU_KEYBINDS)).unwrap();
+            writeln!(message, "{}", keybind::HelpMarkup(MENU_KEYBINDS)).unwrap();
         }
 
-        let error_message = match &self.state {
-            State::Initialized(initialized) => initialized.error(),
-            State::Errored(errored) => Some(&**errored),
-        };
-        if let Some(error_message) = error_message {
-            if !message.is_empty() {
-                message.push_str("\n\n");
-            }
-            message.push_str(error_message);
+        match &self.state {
+            State::Initialized(initialized) => initialized.status(&mut message),
+            State::Errored(errored) => message.push_str(&**errored),
+        }
+
+        while message.ends_with("\n") {
+            message.pop();
         }
 
         message
@@ -232,7 +230,7 @@ use error_status::error_status;
 mod error_status {
     pub(crate) fn error_status(error: anyhow::Error) -> String {
         let escaped = glib::markup_escape_text(&*format!("{error:?}"));
-        format!("<span foreground='red'>Error:</span> {escaped}")
+        format!("\n<span foreground='red'>Error:</span> {escaped}")
     }
 
     use rofi_mode::pango::glib;

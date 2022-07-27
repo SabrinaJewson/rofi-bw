@@ -1520,9 +1520,9 @@ dependencies = [
 
 [[package]]
 name = "rofi-mode"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e38090d1eae88f56f8d3139d4d6d388aa35660b02a7507294dd5a1bec3cc847"
+checksum = "b5432b79128bb58d76c79cbca4dcfb5ed442cd18c46a8c4de9b204cc0dc0da45"
 dependencies = [
  "bitflags",
  "cairo-rs",

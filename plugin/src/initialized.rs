@@ -62,11 +62,17 @@ impl Initialized {
 
     pub(crate) const DISPLAY_NAME: &'static str = "bitwarden";
 
-    pub(crate) fn error(&self) -> Option<&str> {
-        if self.error_message.is_empty() {
-            return None;
+    pub(crate) fn status(&self, s: &mut rofi_mode::String) {
+        match self.view {
+            View::All => s.push_str("All ciphers"),
+            View::Cipher(i) => s.push_str(&*self.ciphers[i].name),
         }
-        Some(&*self.error_message)
+
+        s.push_str("\n");
+
+        if !self.error_message.is_empty() {
+            s.push_str(&*self.error_message);
+        }
     }
 
     pub(crate) fn entries(&self) -> usize {
@@ -132,9 +138,10 @@ impl Initialized {
         let data = match copyable.decrypt(&self.key) {
             Ok(decrypted) => decrypted,
             Err(error) => {
-                self.error_message = error_status(
-                    error.context(format!("failed to decrypt content of {}", cipher.name)),
-                );
+                self.error_message = error_status(error.context(format!(
+                    "failed to decrypt {} of {}",
+                    field.name, cipher.name
+                )));
                 return None;
             }
         };
