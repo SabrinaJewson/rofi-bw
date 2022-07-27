@@ -16,15 +16,15 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
         device: auth::Device<'_>,
         email: &str,
         master_password: &str,
-    ) -> anyhow::Result<Self> {
-        let cache_key = cache::Key::new(email, master_password)?;
+    ) -> Result<Self, StartError> {
+        let cache_key = cache::Key::new(email, master_password).map_err(StartError::CacheKey)?;
         let cache = cache::load(cache_dir, &cache_key);
 
         let validated_cache = match cache {
             Some(cache) => match auth::refresh(http, client_id, &*cache.refresh_token) {
                 Ok(token) => Some((cache.prelogin, token)),
                 Err(auth::refresh::Error::SessionExpired(_)) => None,
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(StartError::Refresh(e)),
             },
             None => None,
         };
@@ -42,7 +42,8 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
                     auth::Scopes::all(),
                     email,
                     master_password,
-                )?;
+                )
+                .map_err(StartError::Login)?;
                 cache::store(
                     cache_dir,
                     &cache_key,
@@ -55,7 +56,9 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
             }
         };
 
-        let account_data = bitwarden_api::Client::new(http, &*token.access_token).sync()?;
+        let account_data = bitwarden_api::Client::new(http, &*token.access_token)
+            .sync()
+            .map_err(StartError::Sync)?;
 
         Ok(Self {
             http,
@@ -101,6 +104,31 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
 
     pub(crate) fn account_data(&self) -> &str {
         &*self.account_data
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum StartError {
+    CacheKey(cache::KeyError),
+    Refresh(auth::refresh::Error),
+    Login(auth::login::Error),
+    Sync(bitwarden_api::SyncError),
+}
+
+impl Display for StartError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("failed to start session")
+    }
+}
+
+impl std::error::Error for StartError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::CacheKey(e) => Some(e),
+            Self::Refresh(e) => Some(e),
+            Self::Login(e) => Some(e),
+            Self::Sync(e) => Some(e),
+        }
     }
 }
 
