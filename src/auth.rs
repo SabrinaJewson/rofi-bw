@@ -152,39 +152,42 @@ pub(crate) fn master_key(prelogin: &Prelogin, email: &str, master_password: &str
     master_key
 }
 
-pub(crate) fn login(
-    http: &ureq::Agent,
-    client_id: &str,
-    device: Device<'_>,
-    scopes: Scopes,
-    email: &str,
-    master_password: &str,
-) -> anyhow::Result<(Prelogin, MasterKey, Token)> {
-    let prelogin = prelogin(http, email)?;
-    let master_key = master_key(&prelogin, email, master_password);
+pub(crate) use login::login;
+mod login {
+    pub(crate) fn login(
+        http: &ureq::Agent,
+        client_id: &str,
+        device: auth::Device<'_>,
+        scopes: auth::Scopes,
+        email: &str,
+        master_password: &str,
+    ) -> anyhow::Result<(Prelogin, MasterKey, auth::Token)> {
+        let prelogin = prelogin(http, email)?;
+        let master_key = master_key(&prelogin, email, master_password);
 
-    const MASTER_PASSWORD_HASH_LEN: usize = 32;
-    let mut master_password_hash = Zeroizing::new([0; MASTER_PASSWORD_HASH_LEN]);
+        const MASTER_PASSWORD_HASH_LEN: usize = 32;
+        let mut master_password_hash = Zeroizing::new([0; MASTER_PASSWORD_HASH_LEN]);
 
-    match prelogin {
-        Prelogin::Pbkdf2 { algorithm, .. } => {
-            algorithm.function()(
-                &*master_key.0,
-                master_password.as_bytes(),
-                1,
-                &mut *master_password_hash,
-            );
+        match prelogin {
+            Prelogin::Pbkdf2 { algorithm, .. } => {
+                algorithm.function()(
+                    &*master_key.0,
+                    master_password.as_bytes(),
+                    1,
+                    &mut *master_password_hash,
+                );
+            }
         }
-    }
 
-    let mut password = Zeroizing::new(String::with_capacity(MASTER_PASSWORD_HASH_LEN * 4 / 3 + 4));
-    base64::encode_config_buf(master_password_hash, base64::STANDARD, &mut password);
+        let mut password =
+            Zeroizing::new(String::with_capacity(MASTER_PASSWORD_HASH_LEN * 4 / 3 + 4));
+        base64::encode_config_buf(master_password_hash, base64::STANDARD, &mut password);
 
-    let mut device_type_buf = itoa::Buffer::new();
-    let device_type = device_type_buf.format(device.r#type as u8);
+        let mut device_type_buf = itoa::Buffer::new();
+        let device_type = device_type_buf.format(device.r#type as u8);
 
-    let response =
-        http.post("https://identity.bitwarden.com/connect/token")
+        let response = http
+            .post("https://identity.bitwarden.com/connect/token")
             .set(
                 "Auth-Email",
                 &*base64::encode_config(&email, base64::URL_SAFE),
@@ -239,7 +242,19 @@ pub(crate) fn login(
             .into_json::<AccessTokenResponse>()
             .context("failed to read token response body")?;
 
-    Ok((prelogin, master_key, response.into_token()))
+        Ok((prelogin, master_key, response.into_token()))
+    }
+
+    use super::AccessTokenResponse;
+    use crate::auth;
+    use crate::auth::master_key;
+    use crate::auth::prelogin;
+    use crate::auth::Prelogin;
+    use anyhow::anyhow;
+    use anyhow::Context as _;
+    use rofi_bw_common::MasterKey;
+    use serde::Deserialize;
+    use zeroize::Zeroizing;
 }
 
 // from:
@@ -429,8 +444,6 @@ fn to_lowercase_cow(s: &str) -> Cow<'_, str> {
     }
 }
 
-use anyhow::anyhow;
-use anyhow::Context as _;
 use bitflags::bitflags;
 use rofi_bw_common::MasterKey;
 use serde::de;
@@ -444,4 +457,3 @@ use std::str;
 use std::time::Duration;
 use std::time::SystemTime;
 use uuid::Uuid;
-use zeroize::Zeroizing;
