@@ -13,7 +13,8 @@
     clippy::needless_pass_by_value,
     clippy::single_char_pattern,
     clippy::match_bool,
-    clippy::items_after_statements
+    clippy::items_after_statements,
+    clippy::single_char_add_str
 )]
 
 rofi_mode::export_mode!(Mode<'_>);

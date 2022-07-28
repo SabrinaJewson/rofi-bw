@@ -247,8 +247,67 @@ fn process_cipher(
                 fields.push(Field::card_code(code));
             }
         }
-        // TODO
-        CipherData::Identity(_) => return Ok(None),
+        CipherData::Identity(identity) => {
+            if identity.title.is_some()
+                || identity.first_name.is_some()
+                || identity.middle_name.is_some()
+                || identity.last_name.is_some()
+            {
+                fields.push(Field::identity_name(
+                    identity.title.map(|v| v.decrypt(key)).transpose()?,
+                    identity.first_name.map(|v| v.decrypt(key)).transpose()?,
+                    identity.middle_name.map(|v| v.decrypt(key)).transpose()?,
+                    identity.last_name.map(|v| v.decrypt(key)).transpose()?,
+                ));
+            }
+
+            if let Some(username) = identity.username {
+                fields.push(Field::identity_username(username.decrypt(key)?));
+            }
+
+            if let Some(company) = identity.company {
+                fields.push(Field::identity_company(company.decrypt(key)?));
+            }
+
+            if let Some(ssn) = identity.ssn {
+                fields.push(Field::identity_ssn(ssn.decrypt(key)?));
+            }
+
+            if let Some(number) = identity.passport_number {
+                fields.push(Field::identity_passport_number(number.decrypt(key)?));
+            }
+
+            if let Some(licence_number) = identity.license_number {
+                fields.push(Field::identity_licence_number(licence_number.decrypt(key)?));
+            }
+
+            if let Some(email) = identity.email {
+                fields.push(Field::identity_email(email.decrypt(key)?));
+            }
+
+            if let Some(phone) = identity.phone {
+                fields.push(Field::identity_phone(phone.decrypt(key)?));
+            }
+
+            if identity.address1.is_some()
+                || identity.address2.is_some()
+                || identity.address3.is_some()
+                || identity.city.is_some()
+                || identity.state.is_some()
+                || identity.postal_code.is_some()
+                || identity.country.is_some()
+            {
+                fields.push(Field::identity_address(
+                    identity.address1.map(|v| v.decrypt(key)).transpose()?,
+                    identity.address2.map(|v| v.decrypt(key)).transpose()?,
+                    identity.address3.map(|v| v.decrypt(key)).transpose()?,
+                    identity.city.map(|v| v.decrypt(key)).transpose()?,
+                    identity.state.map(|v| v.decrypt(key)).transpose()?,
+                    identity.postal_code.map(|v| v.decrypt(key)).transpose()?,
+                    identity.country.map(|v| v.decrypt(key)).transpose()?,
+                ));
+            }
+        }
     }
 
     match &icon {
@@ -318,6 +377,92 @@ impl Field {
     fn card_code(code: CipherString<String>) -> Self {
         Self::hidden("Security code", "security code", code)
     }
+    fn identity_name(
+        title: Option<String>,
+        first_name: Option<String>,
+        middle_name: Option<String>,
+        last_name: Option<String>,
+    ) -> Self {
+        let mut name = String::new();
+        for part in [title, first_name, middle_name, last_name]
+            .into_iter()
+            .flatten()
+        {
+            if name.is_empty() {
+                name = part;
+            } else {
+                name.push(' ');
+                name.push_str(&*part);
+            }
+        }
+        Self::shown("Identity name", "name", name)
+    }
+    fn identity_username(username: String) -> Self {
+        Self::shown("Username", "username", username)
+    }
+    fn identity_company(company: String) -> Self {
+        Self::shown("Company", "company", company)
+    }
+    fn identity_ssn(ssn: String) -> Self {
+        // TODO: Internationalize
+        Self::shown(
+            "National Insurance number",
+            "national insurance number",
+            ssn,
+        )
+    }
+    fn identity_passport_number(number: String) -> Self {
+        Self::shown("Passport number", "passport number", number)
+    }
+    fn identity_licence_number(licence_number: String) -> Self {
+        Self::shown("Licence number", "licence number", licence_number)
+    }
+    fn identity_email(email: String) -> Self {
+        Self::shown("Email", "email", email)
+    }
+    fn identity_phone(phone: String) -> Self {
+        Self::shown("Phone", "phone", phone)
+    }
+    fn identity_address(
+        address1: Option<String>,
+        address2: Option<String>,
+        address3: Option<String>,
+        city: Option<String>,
+        state: Option<String>,
+        postal_code: Option<String>,
+        country: Option<String>,
+    ) -> Self {
+        // TODO: Internationalize
+        let mut data = String::new();
+
+        for row in [
+            [address1].iter().flatten(),
+            [address2].iter().flatten(),
+            [address3].iter().flatten(),
+            [city, state, postal_code].iter().flatten(),
+            [country].iter().flatten(),
+        ] {
+            for (i, item) in row.enumerate() {
+                if i > 0 {
+                    data.push_str(", ");
+                }
+                data.push_str(item);
+            }
+            data.push_str("\n");
+        }
+
+        Self {
+            display: if let Some(first_line) = data.lines().next() {
+                Cow::Owned(format!("Address: {first_line}…"))
+            } else {
+                Cow::Borrowed("Address")
+            },
+            action: Some(Action::Copy {
+                name: Cow::Borrowed("address"),
+                data: Copyable::Decrypted(data),
+            }),
+        }
+    }
     fn notes(notes: String) -> Self {
         Self {
             // TODO: Note preview
@@ -381,11 +526,7 @@ impl Field {
         }
     }
 
-    fn hidden(
-        title: &'static str,
-        name: &'static str,
-        value: CipherString<String>,
-    ) -> Self {
+    fn hidden(title: &'static str, name: &'static str, value: CipherString<String>) -> Self {
         Self {
             display: Cow::Borrowed(title),
             action: Some(Action::Copy {
