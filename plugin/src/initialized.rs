@@ -1,8 +1,8 @@
 pub(crate) struct Initialized {
-    key: SymmetricKey,
     view: View,
     ciphers: Vec<Cipher>,
     icons: BwIcons,
+    // Currently unused, but may be useful in future
     error_message: String,
 }
 
@@ -28,16 +28,13 @@ struct Field {
 enum Action {
     Copy {
         name: Cow<'static, str>,
-        data: Copyable,
+        data: String,
+        /// Used to check whether a reprompt is necessary.
+        hidden: bool,
     },
     Link {
         to: &'static str,
     },
-}
-
-enum Copyable {
-    Encrypted(CipherString<String>),
-    Decrypted(String),
 }
 
 enum Icon {
@@ -61,7 +58,6 @@ impl Initialized {
         ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
         Ok(Self {
-            key,
             view: View::All,
             ciphers,
             icons,
@@ -143,22 +139,7 @@ impl Initialized {
         let field = &cipher.fields[field];
 
         match field.action.as_ref()? {
-            Action::Copy { name, data } => {
-                let reprompt = match data {
-                    Copyable::Encrypted(_) => cipher.reprompt,
-                    Copyable::Decrypted(_) => false,
-                };
-
-                let data = match data.decrypt(&self.key) {
-                    Ok(decrypted) => decrypted,
-                    Err(error) => {
-                        self.error_message = error_status(
-                            error.context(format!("failed to decrypt {name} of {}", cipher.name)),
-                        );
-                        return None;
-                    }
-                };
-
+            Action::Copy { name, data, hidden } => {
                 let image_path = match &cipher.icon {
                     Some(Icon::Host(host)) => self
                         .icons
@@ -171,9 +152,9 @@ impl Initialized {
                 Some(ipc::MenuRequest::Copy {
                     cipher_name: cipher.name.clone(),
                     field: name.clone().into_owned(),
-                    data,
+                    data: data.to_string(),
                     image_path,
-                    reprompt,
+                    reprompt: *hidden && cipher.reprompt,
                     menu_state: ipc::menu_request::MenuState {
                         filter: input.to_string(),
                     },
@@ -234,7 +215,8 @@ fn process_cipher(
         let value = match custom_field.value {
             data::FieldValue::Text(Some(v)) => FieldValue::Text(Some(v.decrypt(key)?)),
             data::FieldValue::Text(None) => FieldValue::Text(None),
-            data::FieldValue::Hidden(v) => FieldValue::Hidden(v),
+            data::FieldValue::Hidden(Some(v)) => FieldValue::Hidden(Some(v.decrypt(key)?)),
+            data::FieldValue::Hidden(None) => FieldValue::Hidden(None),
             data::FieldValue::Boolean(v) => FieldValue::Boolean(v.decrypt(key)?),
             data::FieldValue::Linked(v) => FieldValue::Linked(v),
         };
@@ -266,7 +248,7 @@ fn process_login(
 
     if let Some(password) = login.password {
         *default_copy = Some(fields.len());
-        fields.push(Field::password(password));
+        fields.push(Field::password(password.decrypt(key)?));
     }
 
     for uri in login.uris.into_iter().flatten() {
@@ -292,7 +274,7 @@ fn process_card(
     }
 
     if let Some(number) = card.number {
-        fields.push(Field::card_number(number));
+        fields.push(Field::card_number(number.decrypt(key)?));
     }
 
     if card.exp_month.is_some() || card.exp_year.is_some() {
@@ -303,7 +285,7 @@ fn process_card(
     }
 
     if let Some(code) = card.code {
-        fields.push(Field::card_code(code));
+        fields.push(Field::card_code(code.decrypt(key)?));
     }
 
     Ok(None)
@@ -381,7 +363,7 @@ impl Field {
     fn username(username: String) -> Self {
         Self::shown("Username", "username", username)
     }
-    fn password(password: CipherString<String>) -> Self {
+    fn password(password: String) -> Self {
         Self::hidden("Password", "password", password)
     }
     fn uri(uri: String) -> Self {
@@ -393,7 +375,7 @@ impl Field {
     fn card_brand(brand: String) -> Self {
         Self::shown("Brand", "brand", brand)
     }
-    fn card_number(number: CipherString<String>) -> Self {
+    fn card_number(number: String) -> Self {
         Self::hidden("Number", "number", number)
     }
     fn card_expiration(month: Option<String>, year: Option<String>) -> Self {
@@ -405,7 +387,7 @@ impl Field {
         );
         Self::shown("Expiration", "expiration", expiration)
     }
-    fn card_code(code: CipherString<String>) -> Self {
+    fn card_code(code: String) -> Self {
         Self::hidden("Security code", "security code", code)
     }
     fn identity_name(
@@ -490,7 +472,8 @@ impl Field {
             },
             action: Some(Action::Copy {
                 name: Cow::Borrowed("address"),
-                data: Copyable::Decrypted(data),
+                data,
+                hidden: false,
             }),
         }
     }
@@ -500,7 +483,8 @@ impl Field {
             display: Cow::Borrowed("Notes"),
             action: Some(Action::Copy {
                 name: Cow::Borrowed("note"),
-                data: Copyable::Decrypted(notes),
+                data: notes,
+                hidden: false,
             }),
         }
     }
@@ -528,18 +512,18 @@ impl Field {
         let action = match value {
             FieldValue::Text(text) => Some(Action::Copy {
                 name: name.unwrap_or(Cow::Borrowed("text field")),
-                data: Copyable::Decrypted(text.unwrap_or_default()),
+                data: text.unwrap_or_default(),
+                hidden: false,
             }),
             FieldValue::Hidden(hidden) => Some(Action::Copy {
                 name: name.unwrap_or(Cow::Borrowed("hidden field")),
-                data: match hidden {
-                    Some(hidden) => Copyable::Encrypted(hidden),
-                    None => Copyable::Decrypted(String::new()),
-                },
+                data: hidden.unwrap_or_default(),
+                hidden: true,
             }),
             FieldValue::Boolean(v) => Some(Action::Copy {
                 name: name.unwrap_or(Cow::Borrowed("boolean field")),
-                data: Copyable::Decrypted(v.to_string()),
+                data: v.to_string(),
+                hidden: false,
             }),
             FieldValue::Linked(to) => Some(Action::Link { to: to.as_str() }),
         };
@@ -547,22 +531,24 @@ impl Field {
         Self { display, action }
     }
 
-    fn shown(title: &'static str, name: &'static str, value: String) -> Self {
+    fn shown(title: &'static str, name: &'static str, data: String) -> Self {
         Self {
-            display: Cow::Owned(format!("{title}: {value}")),
+            display: Cow::Owned(format!("{title}: {data}")),
             action: Some(Action::Copy {
                 name: Cow::Borrowed(name),
-                data: Copyable::Decrypted(value),
+                data,
+                hidden: false,
             }),
         }
     }
 
-    fn hidden(title: &'static str, name: &'static str, value: CipherString<String>) -> Self {
+    fn hidden(title: &'static str, name: &'static str, data: String) -> Self {
         Self {
             display: Cow::Borrowed(title),
             action: Some(Action::Copy {
                 name: Cow::Borrowed(name),
-                data: Copyable::Encrypted(value),
+                data,
+                hidden: true,
             }),
         }
     }
@@ -570,18 +556,9 @@ impl Field {
 
 enum FieldValue {
     Text(Option<String>),
-    Hidden(Option<CipherString<String>>),
+    Hidden(Option<String>),
     Boolean(bool),
     Linked(data::Linked),
-}
-
-impl Copyable {
-    fn decrypt(&self, key: &SymmetricKey) -> anyhow::Result<String> {
-        Ok(match self {
-            Self::Encrypted(data) => data.decrypt(key)?,
-            Self::Decrypted(data) => data.clone(),
-        })
-    }
 }
 
 fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
@@ -602,11 +579,9 @@ fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
     }
 }
 
-use crate::cipher_string::CipherString;
 use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
-use crate::error_status::error_status;
 use crate::symmetric_key::SymmetricKey;
 use crate::BwIcons;
 use rofi_bw_common::fs;
