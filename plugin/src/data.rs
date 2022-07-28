@@ -203,7 +203,7 @@ pub(crate) enum FieldValue {
     Text(Option<CipherString<String>>),
     Hidden(Option<CipherString<String>>),
     Boolean(CipherString<bool>),
-    Linked(u32),
+    Linked(Linked),
 }
 
 impl<'de> Deserialize<'de> for Field {
@@ -228,7 +228,7 @@ impl<'de> Deserialize<'de> for Field {
                 let mut name: Option<Option<CipherString<String>>> = None;
                 let mut r#type: Option<u64> = None;
                 let mut value: Option<Option<cipher_string::Untyped>> = None;
-                let mut linked_id: Option<Option<u32>> = None;
+                let mut linked: Option<Option<Linked>> = None;
 
                 while let Some(key) = map.next_key()? {
                     match key {
@@ -251,10 +251,10 @@ impl<'de> Deserialize<'de> for Field {
                             value = Some(map.next_value()?);
                         }
                         Key::LinkedId => {
-                            if linked_id.is_some() {
+                            if linked.is_some() {
                                 return Err(de::Error::duplicate_field("linkedId"));
                             }
-                            linked_id = Some(map.next_value()?);
+                            linked = Some(map.next_value()?);
                         }
                     }
                 }
@@ -262,7 +262,7 @@ impl<'de> Deserialize<'de> for Field {
                 let name = name.ok_or_else(|| de::Error::missing_field("name"))?;
                 let r#type = r#type.ok_or_else(|| de::Error::missing_field("type"))?;
                 let value = value.ok_or_else(|| de::Error::missing_field("value"))?;
-                let linked_id = linked_id.ok_or_else(|| de::Error::missing_field("linkedId"))?;
+                let linked_id = linked.ok_or_else(|| de::Error::missing_field("linkedId"))?;
 
                 let value = match r#type {
                     0 => FieldValue::Text(value.map(CipherString::from)),
@@ -289,6 +289,106 @@ impl<'de> Deserialize<'de> for Field {
     }
 }
 
+macro_rules! define_linked {
+    (
+        $($cipher_type:ident($linked_type:ident) {
+            $($field:ident = $value:expr,)*
+        },)*
+    ) => {
+        #[derive(Debug)]
+        pub(crate) enum Linked {
+            $($cipher_type($linked_type),)*
+        }
+
+        $(
+            #[derive(Debug)]
+            pub(crate) enum $linked_type {
+                $($field = $value,)*
+            }
+
+            impl Display for $linked_type {
+                fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                    match self {
+                        $(Self::$field => f.write_str(stringify!($field)),)*
+                    }
+                }
+            }
+        )*
+
+        impl Linked {
+            pub(crate) fn from_id(id: u64) -> Option<Self> {
+                match id {
+                    $($($value => Some(Self::$cipher_type($linked_type::$field)),)*)*
+                    _ => None,
+                }
+            }
+        }
+
+        impl Display for Linked {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                match self {
+                    $(Self::$cipher_type(linked) => Display::fmt(linked, f),)*
+                }
+            }
+        }
+    };
+}
+
+// From:
+// https://github.com/bitwarden/clients/blob/master/libs/common/src/enums/linkedIdType.ts
+define_linked! {
+    Login(LoginLinked) {
+        Username = 100,
+        Password = 101,
+    },
+    Card(CardLinked) {
+        CardholderName = 300,
+        ExpMonth = 301,
+        ExpYear = 302,
+        Code = 303,
+        Brand = 304,
+        Number = 305,
+    },
+    Identity(IdentityLinked) {
+        Title = 400,
+        MiddleName = 401,
+        Address1 = 402,
+        Address2 = 403,
+        Address3 = 404,
+        City = 405,
+        State = 406,
+        PostalCode = 407,
+        Country = 408,
+        Company = 409,
+        Email = 410,
+        Phone = 411,
+        Ssn = 412,
+        Username = 413,
+        PassportNumber = 414,
+        LicenseNumber = 415,
+        FirstName = 416,
+        LastName = 417,
+        FullName = 418,
+    },
+}
+
+impl<'de> Deserialize<'de> for Linked {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = Linked;
+            fn expecting(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                f.write_str("a linked ID")
+            }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                Linked::from_id(v)
+                    .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Unsigned(v), &self))
+            }
+        }
+        deserializer.deserialize_u64(Visitor)
+    }
+}
+
 use crate::cipher_string;
 use crate::symmetric_key::SymmetricKey;
 use crate::CipherString;
@@ -296,6 +396,7 @@ use serde::de;
 use serde::Deserialize;
 use serde::Deserializer;
 use std::fmt;
+use std::fmt::Display;
 use std::fmt::Formatter;
 use time::OffsetDateTime;
 use uuid::Uuid;

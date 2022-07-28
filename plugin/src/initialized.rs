@@ -326,6 +326,7 @@ impl Field {
                 name: name.unwrap_or(Cow::Borrowed("boolean field")),
                 data: CopyableData::Decrypted(v.to_string()),
             }),
+            // TODO: action
             FieldValue::Linked(_) => None,
         };
 
@@ -337,7 +338,7 @@ enum FieldValue {
     Text(Option<String>),
     Hidden(Option<CipherString<String>>),
     Boolean(bool),
-    Linked(u32),
+    Linked(data::Linked),
 }
 
 impl CopyableData {
