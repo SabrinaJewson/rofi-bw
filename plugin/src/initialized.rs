@@ -22,21 +22,26 @@ struct Cipher {
 
 struct Field {
     display: Cow<'static, str>,
-    copyable: Option<Copyable>,
+    action: Option<Action>,
+}
+
+enum Action {
+    Copy {
+        name: Cow<'static, str>,
+        data: Copyable,
+    },
+    Link {
+        to: &'static str,
+    },
+}
+
+enum Copyable {
+    Encrypted(CipherString<String>),
+    Decrypted(String),
 }
 
 enum Icon {
     Host(Arc<str>),
-}
-
-struct Copyable {
-    name: Cow<'static, str>,
-    data: CopyableData,
-}
-
-enum CopyableData {
-    Encrypted(CipherString<String>),
-    Decrypted(String),
 }
 
 impl Initialized {
@@ -137,41 +142,49 @@ impl Initialized {
 
         let field = &cipher.fields[field];
 
-        let copyable = field.copyable.as_ref()?;
+        match field.action.as_ref()? {
+            Action::Copy { name, data } => {
+                let reprompt = match data {
+                    Copyable::Encrypted(_) => cipher.reprompt,
+                    Copyable::Decrypted(_) => false,
+                };
 
-        let data = match copyable.data.decrypt(&self.key) {
-            Ok(decrypted) => decrypted,
-            Err(error) => {
-                self.error_message = error_status(error.context(format!(
-                    "failed to decrypt {} of {}",
-                    copyable.name, cipher.name
-                )));
-                return None;
+                let data = match data.decrypt(&self.key) {
+                    Ok(decrypted) => decrypted,
+                    Err(error) => {
+                        self.error_message = error_status(
+                            error.context(format!("failed to decrypt {name} of {}", cipher.name)),
+                        );
+                        return None;
+                    }
+                };
+
+                let image_path = match &cipher.icon {
+                    Some(Icon::Host(host)) => self
+                        .icons
+                        .fs_path(host)
+                        .and_then(fs::Path::to_str)
+                        .map(str::to_owned),
+                    None => None,
+                };
+
+                Some(ipc::MenuRequest::Copy {
+                    cipher_name: cipher.name.clone(),
+                    field: name.clone().into_owned(),
+                    data,
+                    image_path,
+                    reprompt,
+                    menu_state: ipc::menu_request::MenuState {
+                        filter: input.to_string(),
+                    },
+                })
             }
-        };
-
-        let image_path = match &cipher.icon {
-            Some(Icon::Host(host)) => self
-                .icons
-                .fs_path(host)
-                .and_then(fs::Path::to_str)
-                .map(str::to_owned),
-            None => None,
-        };
-
-        Some(ipc::MenuRequest::Copy {
-            cipher_name: cipher.name.clone(),
-            field: copyable.name.clone().into_owned(),
-            data,
-            image_path,
-            reprompt: match copyable.data {
-                CopyableData::Encrypted(_) => cipher.reprompt,
-                CopyableData::Decrypted(_) => false,
-            },
-            menu_state: ipc::menu_request::MenuState {
-                filter: input.to_string(),
-            },
-        })
+            Action::Link { to } => {
+                input.clear();
+                input.push_str(to);
+                None
+            }
+        }
     }
 }
 
@@ -252,9 +265,9 @@ impl Field {
     fn username(username: String) -> Self {
         Self {
             display: Cow::Owned(format!("Username: {username}")),
-            copyable: Some(Copyable {
+            action: Some(Action::Copy {
                 name: Cow::Borrowed("username"),
-                data: CopyableData::Decrypted(username),
+                data: Copyable::Decrypted(username),
             }),
         }
     }
@@ -262,9 +275,9 @@ impl Field {
     fn password(password: CipherString<String>) -> Self {
         Self {
             display: Cow::Borrowed("Password"),
-            copyable: Some(Copyable {
+            action: Some(Action::Copy {
                 name: Cow::Borrowed("password"),
-                data: CopyableData::Encrypted(password),
+                data: Copyable::Encrypted(password),
             }),
         }
     }
@@ -272,9 +285,9 @@ impl Field {
     fn uri(uri: String) -> Self {
         Self {
             display: Cow::Owned(format!("Uri: {uri}")),
-            copyable: Some(Copyable {
+            action: Some(Action::Copy {
                 name: Cow::Borrowed("uri"),
-                data: CopyableData::Decrypted(uri),
+                data: Copyable::Decrypted(uri),
             }),
         }
     }
@@ -283,9 +296,9 @@ impl Field {
         Self {
             // TODO: Note preview
             display: Cow::Borrowed("Notes"),
-            copyable: Some(Copyable {
+            action: Some(Action::Copy {
                 name: Cow::Borrowed("note"),
-                data: CopyableData::Decrypted(notes),
+                data: Copyable::Decrypted(notes),
             }),
         }
     }
@@ -310,27 +323,26 @@ impl Field {
 
         let name = name.map(Cow::Owned);
 
-        let copyable = match value {
-            FieldValue::Text(text) => Some(Copyable {
+        let action = match value {
+            FieldValue::Text(text) => Some(Action::Copy {
                 name: name.unwrap_or(Cow::Borrowed("text field")),
-                data: CopyableData::Decrypted(text.unwrap_or_default()),
+                data: Copyable::Decrypted(text.unwrap_or_default()),
             }),
-            FieldValue::Hidden(hidden) => Some(Copyable {
+            FieldValue::Hidden(hidden) => Some(Action::Copy {
                 name: name.unwrap_or(Cow::Borrowed("hidden field")),
                 data: match hidden {
-                    Some(hidden) => CopyableData::Encrypted(hidden),
-                    None => CopyableData::Decrypted(String::new()),
+                    Some(hidden) => Copyable::Encrypted(hidden),
+                    None => Copyable::Decrypted(String::new()),
                 },
             }),
-            FieldValue::Boolean(v) => Some(Copyable {
+            FieldValue::Boolean(v) => Some(Action::Copy {
                 name: name.unwrap_or(Cow::Borrowed("boolean field")),
-                data: CopyableData::Decrypted(v.to_string()),
+                data: Copyable::Decrypted(v.to_string()),
             }),
-            // TODO: action
-            FieldValue::Linked(_) => None,
+            FieldValue::Linked(to) => Some(Action::Link { to: to.as_str() }),
         };
 
-        Self { display, copyable }
+        Self { display, action }
     }
 }
 
@@ -341,7 +353,7 @@ enum FieldValue {
     Linked(data::Linked),
 }
 
-impl CopyableData {
+impl Copyable {
     fn decrypt(&self, key: &SymmetricKey) -> anyhow::Result<String> {
         Ok(match self {
             Self::Encrypted(data) => data.decrypt(key)?,

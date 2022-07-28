@@ -295,22 +295,28 @@ macro_rules! define_linked {
             $($field:ident = $value:expr,)*
         },)*
     ) => {
-        #[derive(Debug)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub(crate) enum Linked {
             $($cipher_type($linked_type),)*
         }
 
         $(
-            #[derive(Debug)]
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             pub(crate) enum $linked_type {
                 $($field = $value,)*
             }
 
+            impl $linked_type {
+                pub(crate) fn as_str(self) -> &'static str {
+                    match self {
+                        $(Self::$field => stringify!($field),)*
+                    }
+                }
+            }
+
             impl Display for $linked_type {
                 fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                    match self {
-                        $(Self::$field => f.write_str(stringify!($field)),)*
-                    }
+                    Display::fmt(self.as_str(), f)
                 }
             }
         )*
@@ -322,13 +328,17 @@ macro_rules! define_linked {
                     _ => None,
                 }
             }
+
+            pub(crate) fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$cipher_type(linked) => linked.as_str(),)*
+                }
+            }
         }
 
         impl Display for Linked {
             fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                match self {
-                    $(Self::$cipher_type(linked) => Display::fmt(linked, f),)*
-                }
+                Display::fmt(self.as_str(), f)
             }
         }
     };
