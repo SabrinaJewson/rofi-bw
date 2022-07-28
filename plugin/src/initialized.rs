@@ -195,36 +195,16 @@ fn process_cipher(
             icon = extract_host(&login, key).map(Icon::Host);
 
             if let Some(username) = login.username {
-                let username = username.decrypt(key)?;
-                fields.push(Field {
-                    display: Cow::Owned(format!("Username: {username}")),
-                    copyable: Some(Copyable {
-                        name: Cow::Borrowed("username"),
-                        data: CopyableData::Decrypted(username),
-                    }),
-                });
+                fields.push(Field::username(username.decrypt(key)?));
             }
 
             if let Some(password) = login.password {
                 default_copy = Some(fields.len());
-                fields.push(Field {
-                    display: Cow::Borrowed("Password"),
-                    copyable: Some(Copyable {
-                        name: Cow::Borrowed("password"),
-                        data: CopyableData::Encrypted(password),
-                    }),
-                });
+                fields.push(Field::password(password));
             }
 
             for uri in login.uris.into_iter().flatten() {
-                let uri = uri.uri.decrypt(key)?;
-                fields.push(Field {
-                    display: Cow::Owned(format!("Uri: {uri}")),
-                    copyable: Some(Copyable {
-                        name: Cow::Borrowed("uri"),
-                        data: CopyableData::Decrypted(uri),
-                    }),
-                });
+                fields.push(Field::uri(uri.uri.decrypt(key)?));
             }
         }
         CipherData::SecureNote => {}
@@ -232,30 +212,20 @@ fn process_cipher(
         _ => return Ok(None),
     }
 
+    match &icon {
+        Some(Icon::Host(host)) => icons.start_fetch(host.clone()),
+        None => {}
+    }
+
     if let Some(notes) = cipher.notes {
-        let notes = notes.decrypt(key)?;
-        fields.push(Field {
-            // TODO: Note preview
-            display: Cow::Borrowed("Notes"),
-            copyable: Some(Copyable {
-                name: Cow::Borrowed("note"),
-                data: CopyableData::Decrypted(notes),
-            }),
-        });
+        fields.push(Field::notes(notes.decrypt(key)?));
     }
 
     for custom_field in cipher.fields.into_iter().flatten() {
         let name = match custom_field.name {
-            Some(name) => Some(Cow::Owned(name.decrypt(key)?)),
+            Some(name) => Some(name.decrypt(key)?),
             None => None,
         };
-
-        enum FieldValue {
-            Text(Option<String>),
-            Hidden(Option<CipherString<String>>),
-            Boolean(bool),
-            Linked(u32),
-        }
 
         let value = match custom_field.value {
             data::FieldValue::Text(Some(v)) => FieldValue::Text(Some(v.decrypt(key)?)),
@@ -265,6 +235,62 @@ fn process_cipher(
             data::FieldValue::Linked(v) => FieldValue::Linked(v),
         };
 
+        fields.push(Field::custom(name, value));
+    }
+
+    Ok(Some(Cipher {
+        id: cipher.id,
+        name,
+        icon,
+        reprompt: cipher.reprompt,
+        fields,
+        default_copy,
+    }))
+}
+
+impl Field {
+    fn username(username: String) -> Self {
+        Self {
+            display: Cow::Owned(format!("Username: {username}")),
+            copyable: Some(Copyable {
+                name: Cow::Borrowed("username"),
+                data: CopyableData::Decrypted(username),
+            }),
+        }
+    }
+
+    fn password(password: CipherString<String>) -> Self {
+        Self {
+            display: Cow::Borrowed("Password"),
+            copyable: Some(Copyable {
+                name: Cow::Borrowed("password"),
+                data: CopyableData::Encrypted(password),
+            }),
+        }
+    }
+
+    fn uri(uri: String) -> Self {
+        Self {
+            display: Cow::Owned(format!("Uri: {uri}")),
+            copyable: Some(Copyable {
+                name: Cow::Borrowed("uri"),
+                data: CopyableData::Decrypted(uri),
+            }),
+        }
+    }
+
+    fn notes(notes: String) -> Self {
+        Self {
+            // TODO: Note preview
+            display: Cow::Borrowed("Notes"),
+            copyable: Some(Copyable {
+                name: Cow::Borrowed("note"),
+                data: CopyableData::Decrypted(notes),
+            }),
+        }
+    }
+
+    fn custom(name: Option<String>, value: FieldValue) -> Self {
         let display_name = name.as_deref().unwrap_or(match value {
             FieldValue::Text(_) => "Text field",
             FieldValue::Hidden(_) => "Hidden field",
@@ -281,6 +307,8 @@ fn process_cipher(
             FieldValue::Boolean(true) => format!("{display_name} ☑"),
             FieldValue::Linked(v) => format!("{display_name} → {v}"),
         });
+
+        let name = name.map(Cow::Owned);
 
         let copyable = match value {
             FieldValue::Text(text) => Some(Copyable {
@@ -301,22 +329,15 @@ fn process_cipher(
             FieldValue::Linked(_) => None,
         };
 
-        fields.push(Field { display, copyable });
+        Self { display, copyable }
     }
+}
 
-    match &icon {
-        Some(Icon::Host(host)) => icons.start_fetch(host.clone()),
-        None => {}
-    }
-
-    Ok(Some(Cipher {
-        id: cipher.id,
-        name,
-        icon,
-        reprompt: cipher.reprompt,
-        fields,
-        default_copy,
-    }))
+enum FieldValue {
+    Text(Option<String>),
+    Hidden(Option<CipherString<String>>),
+    Boolean(bool),
+    Linked(u32),
 }
 
 impl CopyableData {
