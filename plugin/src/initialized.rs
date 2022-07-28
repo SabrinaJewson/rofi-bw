@@ -199,116 +199,15 @@ fn process_cipher(
 
     let name = cipher.name.decrypt(key)?;
 
-    let mut icon = None;
     let mut fields = Vec::new();
     let mut default_copy = None;
 
-    match cipher.data {
-        CipherData::Login(login) => {
-            icon = extract_host(&login, key).map(Icon::Host);
-
-            if let Some(username) = login.username {
-                fields.push(Field::username(username.decrypt(key)?));
-            }
-
-            if let Some(password) = login.password {
-                default_copy = Some(fields.len());
-                fields.push(Field::password(password));
-            }
-
-            for uri in login.uris.into_iter().flatten() {
-                fields.push(Field::uri(uri.uri.decrypt(key)?));
-            }
-        }
-        CipherData::SecureNote => {}
-        CipherData::Card(card) => {
-            // TODO: Card icons
-
-            if let Some(cardholder_name) = card.cardholder_name {
-                fields.push(Field::cardholder_name(cardholder_name.decrypt(key)?));
-            }
-
-            if let Some(brand) = card.brand {
-                fields.push(Field::card_brand(brand.decrypt(key)?));
-            }
-
-            if let Some(number) = card.number {
-                fields.push(Field::card_number(number));
-            }
-
-            if card.exp_month.is_some() || card.exp_year.is_some() {
-                fields.push(Field::card_expiration(
-                    card.exp_month.map(|exp| exp.decrypt(key)).transpose()?,
-                    card.exp_year.map(|exp| exp.decrypt(key)).transpose()?,
-                ));
-            }
-
-            if let Some(code) = card.code {
-                fields.push(Field::card_code(code));
-            }
-        }
-        CipherData::Identity(identity) => {
-            if identity.title.is_some()
-                || identity.first_name.is_some()
-                || identity.middle_name.is_some()
-                || identity.last_name.is_some()
-            {
-                fields.push(Field::identity_name(
-                    identity.title.map(|v| v.decrypt(key)).transpose()?,
-                    identity.first_name.map(|v| v.decrypt(key)).transpose()?,
-                    identity.middle_name.map(|v| v.decrypt(key)).transpose()?,
-                    identity.last_name.map(|v| v.decrypt(key)).transpose()?,
-                ));
-            }
-
-            if let Some(username) = identity.username {
-                fields.push(Field::identity_username(username.decrypt(key)?));
-            }
-
-            if let Some(company) = identity.company {
-                fields.push(Field::identity_company(company.decrypt(key)?));
-            }
-
-            if let Some(ssn) = identity.ssn {
-                fields.push(Field::identity_ssn(ssn.decrypt(key)?));
-            }
-
-            if let Some(number) = identity.passport_number {
-                fields.push(Field::identity_passport_number(number.decrypt(key)?));
-            }
-
-            if let Some(licence_number) = identity.license_number {
-                fields.push(Field::identity_licence_number(licence_number.decrypt(key)?));
-            }
-
-            if let Some(email) = identity.email {
-                fields.push(Field::identity_email(email.decrypt(key)?));
-            }
-
-            if let Some(phone) = identity.phone {
-                fields.push(Field::identity_phone(phone.decrypt(key)?));
-            }
-
-            if identity.address1.is_some()
-                || identity.address2.is_some()
-                || identity.address3.is_some()
-                || identity.city.is_some()
-                || identity.state.is_some()
-                || identity.postal_code.is_some()
-                || identity.country.is_some()
-            {
-                fields.push(Field::identity_address(
-                    identity.address1.map(|v| v.decrypt(key)).transpose()?,
-                    identity.address2.map(|v| v.decrypt(key)).transpose()?,
-                    identity.address3.map(|v| v.decrypt(key)).transpose()?,
-                    identity.city.map(|v| v.decrypt(key)).transpose()?,
-                    identity.state.map(|v| v.decrypt(key)).transpose()?,
-                    identity.postal_code.map(|v| v.decrypt(key)).transpose()?,
-                    identity.country.map(|v| v.decrypt(key)).transpose()?,
-                ));
-            }
-        }
-    }
+    let icon = match cipher.data {
+        CipherData::Login(login) => process_login(login, key, &mut fields, &mut default_copy)?,
+        CipherData::SecureNote => None,
+        CipherData::Card(card) => process_card(card, key, &mut fields)?,
+        CipherData::Identity(identity) => process_identity(identity, key, &mut fields)?,
+    };
 
     match &icon {
         Some(Icon::Host(host)) => icons.start_fetch(host.clone()),
@@ -344,6 +243,131 @@ fn process_cipher(
         fields,
         default_copy,
     }))
+}
+
+fn process_login(
+    login: data::Login,
+    key: &SymmetricKey,
+    fields: &mut Vec<Field>,
+    default_copy: &mut Option<usize>,
+) -> anyhow::Result<Option<Icon>> {
+    let icon = extract_host(&login, key).map(Icon::Host);
+
+    if let Some(username) = login.username {
+        fields.push(Field::username(username.decrypt(key)?));
+    }
+
+    if let Some(password) = login.password {
+        *default_copy = Some(fields.len());
+        fields.push(Field::password(password));
+    }
+
+    for uri in login.uris.into_iter().flatten() {
+        fields.push(Field::uri(uri.uri.decrypt(key)?));
+    }
+
+    Ok(icon)
+}
+
+fn process_card(
+    card: data::Card,
+    key: &SymmetricKey,
+    fields: &mut Vec<Field>,
+) -> anyhow::Result<Option<Icon>> {
+    // TODO: Card icons
+
+    if let Some(cardholder_name) = card.cardholder_name {
+        fields.push(Field::cardholder_name(cardholder_name.decrypt(key)?));
+    }
+
+    if let Some(brand) = card.brand {
+        fields.push(Field::card_brand(brand.decrypt(key)?));
+    }
+
+    if let Some(number) = card.number {
+        fields.push(Field::card_number(number));
+    }
+
+    if card.exp_month.is_some() || card.exp_year.is_some() {
+        fields.push(Field::card_expiration(
+            card.exp_month.map(|exp| exp.decrypt(key)).transpose()?,
+            card.exp_year.map(|exp| exp.decrypt(key)).transpose()?,
+        ));
+    }
+
+    if let Some(code) = card.code {
+        fields.push(Field::card_code(code));
+    }
+
+    Ok(None)
+}
+
+fn process_identity(
+    identity: data::Identity,
+    key: &SymmetricKey,
+    fields: &mut Vec<Field>,
+) -> anyhow::Result<Option<Icon>> {
+    if identity.title.is_some()
+        || identity.first_name.is_some()
+        || identity.middle_name.is_some()
+        || identity.last_name.is_some()
+    {
+        fields.push(Field::identity_name(
+            identity.title.map(|v| v.decrypt(key)).transpose()?,
+            identity.first_name.map(|v| v.decrypt(key)).transpose()?,
+            identity.middle_name.map(|v| v.decrypt(key)).transpose()?,
+            identity.last_name.map(|v| v.decrypt(key)).transpose()?,
+        ));
+    }
+
+    if let Some(username) = identity.username {
+        fields.push(Field::identity_username(username.decrypt(key)?));
+    }
+
+    if let Some(company) = identity.company {
+        fields.push(Field::identity_company(company.decrypt(key)?));
+    }
+
+    if let Some(ssn) = identity.ssn {
+        fields.push(Field::identity_ssn(ssn.decrypt(key)?));
+    }
+
+    if let Some(number) = identity.passport_number {
+        fields.push(Field::identity_passport_number(number.decrypt(key)?));
+    }
+
+    if let Some(licence_number) = identity.license_number {
+        fields.push(Field::identity_licence_number(licence_number.decrypt(key)?));
+    }
+
+    if let Some(email) = identity.email {
+        fields.push(Field::identity_email(email.decrypt(key)?));
+    }
+
+    if let Some(phone) = identity.phone {
+        fields.push(Field::identity_phone(phone.decrypt(key)?));
+    }
+
+    if identity.address1.is_some()
+        || identity.address2.is_some()
+        || identity.address3.is_some()
+        || identity.city.is_some()
+        || identity.state.is_some()
+        || identity.postal_code.is_some()
+        || identity.country.is_some()
+    {
+        fields.push(Field::identity_address(
+            identity.address1.map(|v| v.decrypt(key)).transpose()?,
+            identity.address2.map(|v| v.decrypt(key)).transpose()?,
+            identity.address3.map(|v| v.decrypt(key)).transpose()?,
+            identity.city.map(|v| v.decrypt(key)).transpose()?,
+            identity.state.map(|v| v.decrypt(key)).transpose()?,
+            identity.postal_code.map(|v| v.decrypt(key)).transpose()?,
+            identity.country.map(|v| v.decrypt(key)).transpose()?,
+        ));
+    }
+
+    Ok(None)
 }
 
 impl Field {
