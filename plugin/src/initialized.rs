@@ -21,7 +21,6 @@ struct Cipher {
 }
 
 struct Field {
-    name: Cow<'static, str>,
     display: Cow<'static, str>,
     copyable: Option<Copyable>,
 }
@@ -30,7 +29,12 @@ enum Icon {
     Host(Arc<str>),
 }
 
-enum Copyable {
+struct Copyable {
+    name: Cow<'static, str>,
+    data: CopyableData,
+}
+
+enum CopyableData {
     Encrypted(CipherString<String>),
     Decrypted(String),
 }
@@ -135,12 +139,12 @@ impl Initialized {
 
         let copyable = field.copyable.as_ref()?;
 
-        let data = match copyable.decrypt(&self.key) {
+        let data = match copyable.data.decrypt(&self.key) {
             Ok(decrypted) => decrypted,
             Err(error) => {
                 self.error_message = error_status(error.context(format!(
                     "failed to decrypt {} of {}",
-                    field.name, cipher.name
+                    copyable.name, cipher.name
                 )));
                 return None;
             }
@@ -157,12 +161,12 @@ impl Initialized {
 
         Some(ipc::MenuRequest::Copy {
             cipher_name: cipher.name.clone(),
-            field: field.name.clone().into_owned(),
+            field: copyable.name.clone().into_owned(),
             data,
             image_path,
-            reprompt: match copyable {
-                Copyable::Encrypted(_) => cipher.reprompt,
-                Copyable::Decrypted(_) => false,
+            reprompt: match copyable.data {
+                CopyableData::Encrypted(_) => cipher.reprompt,
+                CopyableData::Decrypted(_) => false,
             },
             menu_state: ipc::menu_request::MenuState {
                 filter: input.to_string(),
@@ -193,27 +197,33 @@ fn process_cipher(
             if let Some(username) = login.username {
                 let username = username.decrypt(key)?;
                 fields.push(Field {
-                    name: Cow::Borrowed("username"),
                     display: Cow::Owned(format!("Username: {username}")),
-                    copyable: Some(Copyable::Decrypted(username)),
+                    copyable: Some(Copyable {
+                        name: Cow::Borrowed("username"),
+                        data: CopyableData::Decrypted(username),
+                    }),
                 });
             }
 
             if let Some(password) = login.password {
                 default_copy = Some(fields.len());
                 fields.push(Field {
-                    name: Cow::Borrowed("password"),
                     display: Cow::Borrowed("Password"),
-                    copyable: Some(Copyable::Encrypted(password)),
+                    copyable: Some(Copyable {
+                        name: Cow::Borrowed("password"),
+                        data: CopyableData::Encrypted(password),
+                    }),
                 });
             }
 
             for uri in login.uris.into_iter().flatten() {
                 let uri = uri.uri.decrypt(key)?;
                 fields.push(Field {
-                    name: Cow::Borrowed("uri"),
                     display: Cow::Owned(format!("Uri: {uri}")),
-                    copyable: Some(Copyable::Decrypted(uri)),
+                    copyable: Some(Copyable {
+                        name: Cow::Borrowed("uri"),
+                        data: CopyableData::Decrypted(uri),
+                    }),
                 });
             }
         }
@@ -225,10 +235,12 @@ fn process_cipher(
     if let Some(notes) = cipher.notes {
         let notes = notes.decrypt(key)?;
         fields.push(Field {
-            name: Cow::Borrowed("note"),
             // TODO: Note preview
             display: Cow::Borrowed("Notes"),
-            copyable: Some(Copyable::Decrypted(notes)),
+            copyable: Some(Copyable {
+                name: Cow::Borrowed("note"),
+                data: CopyableData::Decrypted(notes),
+            }),
         });
     }
 
@@ -270,28 +282,26 @@ fn process_cipher(
             FieldValue::Linked(v) => format!("{display_name} → {v}"),
         });
 
-        let name = name.unwrap_or(Cow::Borrowed(match value {
-            FieldValue::Text(_) => "text field",
-            FieldValue::Hidden(_) => "hidden field",
-            FieldValue::Boolean(_) => "boolean field",
-            FieldValue::Linked(_) => "linked field",
-        }));
-
         let copyable = match value {
-            FieldValue::Text(Some(text)) => Some(Copyable::Decrypted(text)),
-            FieldValue::Hidden(Some(hidden)) => Some(Copyable::Encrypted(hidden)),
-            FieldValue::Hidden(None) | FieldValue::Text(None) => {
-                Some(Copyable::Decrypted(String::new()))
-            }
-            FieldValue::Boolean(v) => Some(Copyable::Decrypted(v.to_string())),
+            FieldValue::Text(text) => Some(Copyable {
+                name: name.unwrap_or(Cow::Borrowed("text field")),
+                data: CopyableData::Decrypted(text.unwrap_or_default()),
+            }),
+            FieldValue::Hidden(hidden) => Some(Copyable {
+                name: name.unwrap_or(Cow::Borrowed("hidden field")),
+                data: match hidden {
+                    Some(hidden) => CopyableData::Encrypted(hidden),
+                    None => CopyableData::Decrypted(String::new()),
+                },
+            }),
+            FieldValue::Boolean(v) => Some(Copyable {
+                name: name.unwrap_or(Cow::Borrowed("boolean field")),
+                data: CopyableData::Decrypted(v.to_string()),
+            }),
             FieldValue::Linked(_) => None,
         };
 
-        fields.push(Field {
-            name,
-            display,
-            copyable,
-        });
+        fields.push(Field { display, copyable });
     }
 
     match &icon {
@@ -309,7 +319,7 @@ fn process_cipher(
     }))
 }
 
-impl Copyable {
+impl CopyableData {
     fn decrypt(&self, key: &SymmetricKey) -> anyhow::Result<String> {
         Ok(match self {
             Self::Encrypted(data) => data.decrypt(key)?,
