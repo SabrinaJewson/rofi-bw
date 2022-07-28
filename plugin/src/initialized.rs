@@ -221,8 +221,34 @@ fn process_cipher(
             }
         }
         CipherData::SecureNote => {}
-        // TODO: Card and identity
-        _ => return Ok(None),
+        CipherData::Card(card) => {
+            // TODO: Card icons
+
+            if let Some(cardholder_name) = card.cardholder_name {
+                fields.push(Field::cardholder_name(cardholder_name.decrypt(key)?));
+            }
+
+            if let Some(brand) = card.brand {
+                fields.push(Field::card_brand(brand.decrypt(key)?));
+            }
+
+            if let Some(number) = card.number {
+                fields.push(Field::card_number(number));
+            }
+
+            if card.exp_month.is_some() || card.exp_year.is_some() {
+                fields.push(Field::card_expiration(
+                    card.exp_month.map(|exp| exp.decrypt(key)).transpose()?,
+                    card.exp_year.map(|exp| exp.decrypt(key)).transpose()?,
+                ));
+            }
+
+            if let Some(code) = card.code {
+                fields.push(Field::card_code(code));
+            }
+        }
+        // TODO
+        CipherData::Identity(_) => return Ok(None),
     }
 
     match &icon {
@@ -288,6 +314,63 @@ impl Field {
             action: Some(Action::Copy {
                 name: Cow::Borrowed("uri"),
                 data: Copyable::Decrypted(uri),
+            }),
+        }
+    }
+
+    fn cardholder_name(name: String) -> Self {
+        Self {
+            display: Cow::Owned(format!("Cardholder name: {name}")),
+            action: Some(Action::Copy {
+                name: Cow::Borrowed("cardholder name"),
+                data: Copyable::Decrypted(name),
+            }),
+        }
+    }
+
+    fn card_brand(brand: String) -> Self {
+        Self {
+            display: Cow::Owned(format!("Brand: {brand}")),
+            action: Some(Action::Copy {
+                name: Cow::Borrowed("brand"),
+                data: Copyable::Decrypted(brand),
+            }),
+        }
+    }
+
+    fn card_number(number: CipherString<String>) -> Self {
+        Self {
+            display: Cow::Borrowed("Number"),
+            action: Some(Action::Copy {
+                name: Cow::Borrowed("number"),
+                data: Copyable::Encrypted(number),
+            }),
+        }
+    }
+
+    fn card_expiration(month: Option<String>, year: Option<String>) -> Self {
+        // TODO: Internationalize this?
+        let expiration = format!(
+            "{} / {}",
+            month.as_deref().unwrap_or("__"),
+            year.as_deref().unwrap_or("____"),
+        );
+
+        Self {
+            display: Cow::Owned(format!("Expiration: {expiration}")),
+            action: Some(Action::Copy {
+                name: Cow::Borrowed("expiration"),
+                data: Copyable::Decrypted(expiration),
+            }),
+        }
+    }
+
+    fn card_code(code: CipherString<String>) -> Self {
+        Self {
+            display: Cow::Borrowed("Security code"),
+            action: Some(Action::Copy {
+                name: Cow::Borrowed("security code"),
+                data: Copyable::Encrypted(code),
             }),
         }
     }
