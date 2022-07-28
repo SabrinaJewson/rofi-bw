@@ -204,7 +204,14 @@ fn process_cipher(
 
     let icon = match cipher.data {
         CipherData::Login(login) => process_login(login, key, &mut fields, &mut default_copy)?,
-        CipherData::SecureNote => None,
+        CipherData::SecureNote => {
+            // The default copy of a secure note should be its note, unlike any other cipher data
+            // type. This works because the next field we add is always the note field.
+            if cipher.notes.is_some() {
+                default_copy = Some(fields.len());
+            }
+            None
+        }
         CipherData::Card(card) => process_card(card, key, &mut fields)?,
         CipherData::Identity(identity) => process_identity(identity, key, &mut fields)?,
     };
