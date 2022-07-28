@@ -12,7 +12,8 @@
     clippy::struct_excessive_bools,
     clippy::needless_pass_by_value,
     clippy::single_char_pattern,
-    clippy::match_bool
+    clippy::match_bool,
+    clippy::items_after_statements
 )]
 
 rofi_mode::export_mode!(Mode<'_>);

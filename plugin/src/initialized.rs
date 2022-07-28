@@ -21,7 +21,7 @@ struct Cipher {
 }
 
 struct Field {
-    name: &'static str,
+    name: Cow<'static, str>,
     display: Cow<'static, str>,
     copyable: Option<Copyable>,
 }
@@ -157,7 +157,7 @@ impl Initialized {
 
         Some(ipc::MenuRequest::Copy {
             cipher_name: cipher.name.clone(),
-            field: field.name.to_owned(),
+            field: field.name.clone().into_owned(),
             data,
             image_path,
             reprompt: match copyable {
@@ -193,7 +193,7 @@ fn process_cipher(
             if let Some(username) = login.username {
                 let username = username.decrypt(key)?;
                 fields.push(Field {
-                    name: "username",
+                    name: Cow::Borrowed("username"),
                     display: Cow::Owned(format!("Username: {username}")),
                     copyable: Some(Copyable::Decrypted(username)),
                 });
@@ -202,7 +202,7 @@ fn process_cipher(
             if let Some(password) = login.password {
                 default_copy = Some(fields.len());
                 fields.push(Field {
-                    name: "password",
+                    name: Cow::Borrowed("password"),
                     display: Cow::Borrowed("Password"),
                     copyable: Some(Copyable::Encrypted(password)),
                 });
@@ -211,7 +211,7 @@ fn process_cipher(
             for uri in login.uris.into_iter().flatten() {
                 let uri = uri.uri.decrypt(key)?;
                 fields.push(Field {
-                    name: "uri",
+                    name: Cow::Borrowed("uri"),
                     display: Cow::Owned(format!("Uri: {uri}")),
                     copyable: Some(Copyable::Decrypted(uri)),
                 });
@@ -225,9 +225,72 @@ fn process_cipher(
     if let Some(notes) = cipher.notes {
         let notes = notes.decrypt(key)?;
         fields.push(Field {
-            name: "note",
+            name: Cow::Borrowed("note"),
+            // TODO: Note preview
             display: Cow::Borrowed("Notes"),
             copyable: Some(Copyable::Decrypted(notes)),
+        });
+    }
+
+    for custom_field in cipher.fields.into_iter().flatten() {
+        let name = match custom_field.name {
+            Some(name) => Some(Cow::Owned(name.decrypt(key)?)),
+            None => None,
+        };
+
+        enum FieldValue {
+            Text(Option<String>),
+            Hidden(Option<CipherString<String>>),
+            Boolean(bool),
+            Linked(u32),
+        }
+
+        let value = match custom_field.value {
+            data::FieldValue::Text(Some(v)) => FieldValue::Text(Some(v.decrypt(key)?)),
+            data::FieldValue::Text(None) => FieldValue::Text(None),
+            data::FieldValue::Hidden(v) => FieldValue::Hidden(v),
+            data::FieldValue::Boolean(v) => FieldValue::Boolean(v.decrypt(key)?),
+            data::FieldValue::Linked(v) => FieldValue::Linked(v),
+        };
+
+        let display_name = name.as_deref().unwrap_or(match value {
+            FieldValue::Text(_) => "Text field",
+            FieldValue::Hidden(_) => "Hidden field",
+            FieldValue::Boolean(_) => "Boolean field",
+            FieldValue::Linked(_) => "linked field",
+        });
+
+        let display = Cow::Owned(match &value {
+            FieldValue::Text(Some(text)) => format!("{display_name}: {text}"),
+            FieldValue::Text(None) => format!("{display_name} (empty)"),
+            FieldValue::Hidden(Some(_)) => format!("{display_name} (hidden)"),
+            FieldValue::Hidden(None) => format!("{display_name} (hidden, empty)"),
+            FieldValue::Boolean(false) => format!("{display_name} ☐"),
+            FieldValue::Boolean(true) => format!("{display_name} ☑"),
+            FieldValue::Linked(v) => format!("{display_name} → {v}"),
+        });
+
+        let name = name.unwrap_or(Cow::Borrowed(match value {
+            FieldValue::Text(_) => "text field",
+            FieldValue::Hidden(_) => "hidden field",
+            FieldValue::Boolean(_) => "boolean field",
+            FieldValue::Linked(_) => "linked field",
+        }));
+
+        let copyable = match value {
+            FieldValue::Text(Some(text)) => Some(Copyable::Decrypted(text)),
+            FieldValue::Hidden(Some(hidden)) => Some(Copyable::Encrypted(hidden)),
+            FieldValue::Hidden(None) | FieldValue::Text(None) => {
+                Some(Copyable::Decrypted(String::new()))
+            }
+            FieldValue::Boolean(v) => Some(Copyable::Decrypted(v.to_string())),
+            FieldValue::Linked(_) => None,
+        };
+
+        fields.push(Field {
+            name,
+            display,
+            copyable,
         });
     }
 
