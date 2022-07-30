@@ -137,6 +137,7 @@ struct State {
     view: View,
     ciphers: CipherSet,
     all: Vec<cipher_set::Index>,
+    trash: Vec<cipher_set::Index>,
     type_buckets: CipherTypeList<Vec<cipher_set::Index>>,
 }
 
@@ -153,19 +154,22 @@ impl State {
         // TODO: Parallelize this
         let mut ciphers = Vec::new();
         for cipher in data.ciphers {
-            if let Some(cipher) = process_cipher(cipher, &key)? {
-                ciphers.push(cipher);
-            }
+            ciphers.push(process_cipher(cipher, &key)?);
         }
-
         ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
         let ciphers = CipherSet::from_vec(ciphers);
 
-        let all = ciphers.enumerated().map(|(i, _)| i).collect();
-
-        let mut type_buckets = <CipherTypeList<Vec<cipher_set::Index>>>::default();
+        let mut all = Vec::new();
+        let mut trash = Vec::new();
+        let mut type_buckets = <CipherTypeList<Vec<_>>>::default();
         for (i, cipher) in ciphers.enumerated() {
+            if cipher.deleted {
+                trash.push(i);
+            } else {
+                all.push(i);
+            }
+
             type_buckets[cipher.r#type].push(i);
         }
 
@@ -174,6 +178,7 @@ impl State {
             view: View::CipherList(CipherList::All),
             ciphers,
             all,
+            trash,
             type_buckets,
         })
     }
@@ -184,6 +189,10 @@ impl State {
                 CipherList::All => CipherList2Todo {
                     name: "All ciphers",
                     contents: &*self.all,
+                },
+                CipherList::Trash => CipherList2Todo {
+                    name: "Trash",
+                    contents: &*self.trash,
                 },
                 CipherList::TypeBucket(cipher_type) => CipherList2Todo {
                     name: match cipher_type {
@@ -214,17 +223,13 @@ impl Viewing<'_> {
     }
 }
 
+// TODO: rename lol
 struct CipherList2Todo<'a> {
     name: &'static str,
     contents: &'a [cipher_set::Index],
 }
 
-fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Option<Cipher>> {
-    // TODO: show bin
-    if cipher.deleted_date.is_some() {
-        return Ok(None);
-    }
-
+fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Cipher> {
     let name = cipher.name.decrypt(key)?;
 
     let mut fields = Vec::new();
@@ -277,15 +282,16 @@ fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Op
         fields.push(Field::custom(name, value));
     }
 
-    Ok(Some(Cipher {
+    Ok(Cipher {
         id: cipher.id,
         r#type,
+        deleted: cipher.deleted_date.is_some(),
         name,
         icon,
         reprompt: cipher.reprompt,
         fields,
         default_copy,
-    }))
+    })
 }
 
 fn process_login(
@@ -504,6 +510,7 @@ struct Cipher {
     id: Uuid,
     /// Used to sort ciphers into type buckets.
     r#type: CipherType,
+    deleted: bool,
     name: String,
     icon: Option<Icon>,
     reprompt: bool,

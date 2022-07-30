@@ -137,6 +137,11 @@ pub mod menu_keybinds {
             description: "All",
         },
         Keybind {
+            combination: "Alt+t",
+            action: Action::ShowList(CipherList::Trash),
+            description: "Trash",
+        },
+        Keybind {
             combination: "Alt+l",
             action: Action::ShowList(CipherList::TypeBucket(CipherType::Login)),
             description: "Logins",
@@ -164,10 +169,16 @@ pub mod menu_keybinds {
         &MENU_KEYBINDS[0..3]
     }
 
-    /// Keybinds that don't work without the data being loaded.
+    /// Keybinds that select a category (all, trash) to be shown.
     #[must_use]
-    pub fn needs_data() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[3..]
+    pub fn categories() -> &'static [Keybind<Action>] {
+        &MENU_KEYBINDS[3..5]
+    }
+
+    /// Keybinds that select a specific type bucket to be shown.
+    #[must_use]
+    pub fn type_buckets() -> &'static [Keybind<Action>] {
+        &MENU_KEYBINDS[5..]
     }
 
     use crate::CipherList;
@@ -178,6 +189,7 @@ pub mod menu_keybinds {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CipherList {
     All,
+    Trash,
     TypeBucket(CipherType),
 }
 

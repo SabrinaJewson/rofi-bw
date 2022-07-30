@@ -174,8 +174,9 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
             writeln!(message, "{}", keybind::HelpMarkup(menu_keybinds::no_data())).unwrap();
 
             if self.initialized_mut().is_some() {
-                let binds = menu_keybinds::needs_data();
-                writeln!(message, "{}", keybind::HelpMarkup(binds)).unwrap();
+                for binds in [menu_keybinds::categories(), menu_keybinds::type_buckets()] {
+                    writeln!(message, "{}", keybind::HelpMarkup(binds)).unwrap();
+                }
             }
         }
 
