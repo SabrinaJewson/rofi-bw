@@ -164,7 +164,7 @@ impl State {
 
         let mut ciphers = (0..data.ciphers.len())
             .map(|_| Cipher::safe_uninit())
-            .collect::<Vec<_>>();
+            .collect::<Box<[_]>>();
 
         parallel_try_fill(
             data.ciphers
@@ -175,7 +175,7 @@ impl State {
 
         ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
-        let ciphers = CipherSet::from_vec(ciphers);
+        let ciphers = CipherSet::from_boxed_slice(ciphers);
 
         let mut all = Vec::new();
         let mut trash = Vec::new();
@@ -458,13 +458,13 @@ fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
 }
 
 use cipher_set::CipherSet;
-/// Newtype over a `Vec<Cipher>` for type-safety.
+/// Newtype over a `Box<[Cipher]>` for type-safety.
 mod cipher_set {
-    pub(super) struct CipherSet(Vec<Cipher>);
+    pub(super) struct CipherSet(Box<[Cipher]>);
 
     impl CipherSet {
-        pub(super) const fn from_vec(vec: Vec<Cipher>) -> Self {
-            Self(vec)
+        pub(super) const fn from_boxed_slice(slice: Box<[Cipher]>) -> Self {
+            Self(slice)
         }
         pub(crate) fn enumerated(&self) -> impl Iterator<Item = (Index, &Cipher)> {
             self.0
