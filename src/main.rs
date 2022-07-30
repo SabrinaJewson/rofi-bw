@@ -52,7 +52,12 @@ fn try_main(
 
     let display = env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
 
-    let request = daemon::Request::ShowMenu(daemon::ShowMenu { display, filter });
+    let request = daemon::Request::ShowMenu(daemon::ShowMenu {
+        display,
+        filter,
+        // TODO: Allow configuring this
+        view: ipc::View::default(),
+    });
     if daemon::invoke(runtime_dir, &request)? {
         return Ok(());
     }
@@ -90,18 +95,14 @@ fn try_main(
 
     while let Some(mut session) = session_manager.start_session()? {
         loop {
-            let after_menu = show_menu(
-                &mut session_manager,
-                session,
-                &mut menu_opts,
-                &*request.display,
-                &*request.filter,
-            );
+            let after_menu = show_menu(&mut session_manager, session, &mut menu_opts, &request);
 
             request = if let Some(next_menu_state) = after_menu.next_menu_state {
                 daemon::ShowMenu {
+                    // Keep the same display
                     display: request.display,
                     filter: next_menu_state.filter,
+                    view: next_menu_state.view,
                 }
             } else if after_menu.session.is_none() {
                 // If we don’t have to show another menu and don’t have an active session, there’s
@@ -228,11 +229,10 @@ fn show_menu<'http, 'client_id>(
     session_manager: &mut SessionManager<'_, '_, '_>,
     session: Session<'http, 'client_id>,
     opts: &mut MenuOpts,
-    display: &str,
-    filter: &str,
+    request: &daemon::ShowMenu,
 ) -> AfterMenu<'http, 'client_id> {
     let mut session = Some(session);
-    let next_menu_state = try_show_menu(session_manager, &mut session, opts, display, filter)
+    let next_menu_state = try_show_menu(session_manager, &mut session, opts, request)
         .unwrap_or_else(|e| {
             report_error(e.context("failed to run menu").as_ref());
             None
@@ -247,22 +247,22 @@ fn try_show_menu(
     session_manager: &mut SessionManager<'_, '_, '_>,
     session_option: &mut Option<Session<'_, '_>>,
     opts: &mut MenuOpts,
-    display: &str,
-    filter: &str,
+    request: &daemon::ShowMenu,
 ) -> anyhow::Result<Option<ipc::menu_request::MenuState>> {
     let session = session_option.as_mut().unwrap();
 
     let handshake = ipc::Handshake {
         master_key: session.master_key(),
         data: session.account_data().as_bytes(),
+        view: request.view,
     };
 
     let res = menu::run(
         &*opts.lib_dir,
         &handshake,
         &opts.rofi_options,
-        display,
-        filter,
+        &*request.display,
+        &*request.filter,
     )?;
 
     Ok(match res {

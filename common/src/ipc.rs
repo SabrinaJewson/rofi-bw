@@ -8,6 +8,7 @@ pub mod handshake {
     pub struct Handshake<MasterKeyT, DataT> {
         pub master_key: MasterKeyT,
         pub data: DataT,
+        pub view: View,
     }
 
     pub fn write<W, MasterKeyT, DataT>(
@@ -61,6 +62,7 @@ pub mod handshake {
         }
     }
 
+    use super::View;
     use crate::MasterKey;
     use std::borrow::Borrow;
     use std::error::Error;
@@ -145,11 +147,27 @@ pub mod menu_request {
     #[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
     pub struct MenuState {
         pub filter: String,
+        pub view: View,
     }
 
+    use super::View;
     use std::error::Error;
     use std::fmt;
     use std::fmt::Display;
     use std::fmt::Formatter;
     use std::io;
 }
+
+#[derive(Debug, Clone, Copy, bincode::Encode, bincode::Decode)]
+pub enum View {
+    CipherList(CipherList),
+    Cipher { uuid: [u8; 16] },
+}
+
+impl Default for View {
+    fn default() -> Self {
+        Self::CipherList(CipherList::All)
+    }
+}
+
+use crate::CipherList;

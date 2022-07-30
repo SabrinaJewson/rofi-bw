@@ -6,10 +6,10 @@ pub(crate) struct Initialized {
 }
 
 impl Initialized {
-    pub(crate) fn new(master_key: &MasterKey, data: Data) -> anyhow::Result<Self> {
+    pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
         let mut icons = BwIcons::new()?;
 
-        let state = State::new(master_key, data)?;
+        let state = State::new(master_key, data, view)?;
 
         for cipher in &state.ciphers {
             match &cipher.icon {
@@ -30,7 +30,7 @@ impl Initialized {
     pub(crate) const DISPLAY_NAME: &'static str = "bitwarden";
 
     pub(crate) fn status(&self, s: &mut rofi_mode::String) {
-        s.push_str(self.state.viewing().name());
+        s.push_str(self.state.viewing().description());
         s.push_str("\n");
 
         if !self.error_message.is_empty() {
@@ -121,6 +121,7 @@ impl Initialized {
                     reprompt,
                     menu_state: ipc::menu_request::MenuState {
                         filter: input.to_string(),
+                        view: self.ipc_view(),
                     },
                 })
             }
@@ -129,6 +130,15 @@ impl Initialized {
                 input.push_str(to);
                 None
             }
+        }
+    }
+
+    pub(crate) fn ipc_view(&self) -> ipc::View {
+        match self.state.viewing() {
+            Viewing::CipherList(list) => ipc::View::CipherList(list.list),
+            Viewing::Cipher(cipher) => ipc::View::Cipher {
+                uuid: cipher.id.into_bytes(),
+            },
         }
     }
 }
@@ -149,7 +159,7 @@ enum View {
 }
 
 impl State {
-    pub(crate) fn new(master_key: &MasterKey, data: Data) -> anyhow::Result<Self> {
+    pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
         let key = data.profile.key.decrypt(master_key)?;
 
         // TODO: Parallelize this
@@ -179,8 +189,18 @@ impl State {
         }
 
         Ok(Self {
-            // TODO: Allow configuring this
-            view: View::CipherList(CipherList::All),
+            view: match view {
+                ipc::View::CipherList(list) => View::CipherList(list),
+                ipc::View::Cipher { uuid } => {
+                    let uuid = Uuid::from_bytes(uuid);
+                    if let Some((i, _)) = ciphers.enumerated().find(|(_, cipher)| cipher.id == uuid)
+                    {
+                        View::Cipher(i)
+                    } else {
+                        View::CipherList(CipherList::All)
+                    }
+                }
+            },
             ciphers,
             all,
             trash,
@@ -191,27 +211,13 @@ impl State {
 
     pub(crate) fn viewing(&self) -> Viewing<'_> {
         match self.view {
-            View::CipherList(view) => Viewing::CipherList(match view {
-                CipherList::All => CipherListRef {
-                    name: "All ciphers",
-                    contents: &*self.all,
-                },
-                CipherList::Trash => CipherListRef {
-                    name: "Trash",
-                    contents: &*self.trash,
-                },
-                CipherList::Favourites => CipherListRef {
-                    name: "Favourites",
-                    contents: &*self.favourites,
-                },
-                CipherList::TypeBucket(cipher_type) => CipherListRef {
-                    name: match cipher_type {
-                        CipherType::Login => "Logins",
-                        CipherType::SecureNote => "Secure notes",
-                        CipherType::Card => "Cards",
-                        CipherType::Identity => "Identities",
-                    },
-                    contents: &*self.type_buckets[cipher_type],
+            View::CipherList(list) => Viewing::CipherList(CipherListRef {
+                list,
+                contents: match list {
+                    CipherList::All => &*self.all,
+                    CipherList::Trash => &*self.trash,
+                    CipherList::Favourites => &*self.favourites,
+                    CipherList::TypeBucket(cipher_type) => &*self.type_buckets[cipher_type],
                 },
             }),
             View::Cipher(i) => Viewing::Cipher(&self.ciphers[i]),
@@ -225,16 +231,16 @@ enum Viewing<'a> {
 }
 
 impl Viewing<'_> {
-    fn name(&self) -> &str {
+    fn description(&self) -> &str {
         match self {
-            Self::CipherList(list) => list.name,
+            Self::CipherList(list) => list.list.description(),
             Self::Cipher(cipher) => &*cipher.name,
         }
     }
 }
 
 struct CipherListRef<'a> {
-    name: &'static str,
+    list: CipherList,
     contents: &'a [cipher_set::Index],
 }
 

@@ -55,9 +55,13 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
 
         let res = (|| {
             let pipe = BufReader::new(pipe.insert(get_pipe()?));
-            let ipc::Handshake { master_key, data } = ipc::handshake::read(pipe)?;
+            let ipc::Handshake {
+                master_key,
+                data,
+                view,
+            } = ipc::handshake::read(pipe)?;
             let data = serde_json::from_slice(&*data).context("failed to read vault data")?;
-            Initialized::new(&master_key, data)
+            Initialized::new(&master_key, data, view)
         })();
 
         let state = res
@@ -146,6 +150,10 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                     menu_keybinds::Action::Sync => ipc::MenuRequest::Sync {
                         menu_state: ipc::menu_request::MenuState {
                             filter: input.to_string(),
+                            view: match &self.state {
+                                State::Initialized(initialized) => initialized.ipc_view(),
+                                State::Errored(_) => ipc::View::default(),
+                            },
                         },
                     },
                     menu_keybinds::Action::Lock => ipc::MenuRequest::Lock,

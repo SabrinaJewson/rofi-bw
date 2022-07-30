@@ -11,6 +11,9 @@ pub(crate) struct ShowMenu {
 
     /// The initial filter to start Rofi with.
     pub(crate) filter: String,
+
+    /// The view to display in `rofi-bw`
+    pub(crate) view: ipc::View,
 }
 
 #[derive(bincode::Encode, bincode::Decode)]
@@ -210,6 +213,7 @@ use crate::config::AutoLock;
 use anyhow::anyhow;
 use anyhow::Context as _;
 use rofi_bw_common::fs;
+use rofi_bw_common::ipc;
 use std::io;
 use std::io::Read;
 use std::io::Write;

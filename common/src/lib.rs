@@ -191,15 +191,35 @@ pub mod menu_keybinds {
     use crate::Keybind;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CipherList {
-    All,
-    Trash,
-    Favourites,
-    TypeBucket(CipherType),
+pub use cipher_list::CipherList;
+mod cipher_list {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+    pub enum CipherList {
+        All,
+        Trash,
+        Favourites,
+        TypeBucket(CipherType),
+    }
+
+    impl CipherList {
+        #[must_use]
+        pub const fn description(self) -> &'static str {
+            match self {
+                Self::All => "All items",
+                Self::Trash => "Trash",
+                Self::Favourites => "Favourites",
+                Self::TypeBucket(CipherType::Login) => "Logins",
+                Self::TypeBucket(CipherType::SecureNote) => "Secure notes",
+                Self::TypeBucket(CipherType::Card) => "Cards",
+                Self::TypeBucket(CipherType::Identity) => "Identities",
+            }
+        }
+    }
+
+    use crate::CipherType;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
 pub enum CipherType {
     Login = 0,
     SecureNote = 1,
