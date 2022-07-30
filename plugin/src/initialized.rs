@@ -138,6 +138,7 @@ struct State {
     ciphers: CipherSet,
     all: Vec<cipher_set::Index>,
     trash: Vec<cipher_set::Index>,
+    favourites: Vec<cipher_set::Index>,
     type_buckets: CipherTypeList<Vec<cipher_set::Index>>,
 }
 
@@ -162,11 +163,15 @@ impl State {
 
         let mut all = Vec::new();
         let mut trash = Vec::new();
+        let mut favourites = Vec::new();
         let mut type_buckets = <CipherTypeList<Vec<_>>>::default();
         for (i, cipher) in ciphers.enumerated() {
             if cipher.deleted {
                 trash.push(i);
             } else {
+                if cipher.favourite {
+                    favourites.push(i);
+                }
                 all.push(i);
             }
 
@@ -179,6 +184,7 @@ impl State {
             ciphers,
             all,
             trash,
+            favourites,
             type_buckets,
         })
     }
@@ -193,6 +199,10 @@ impl State {
                 CipherList::Trash => CipherListRef {
                     name: "Trash",
                     contents: &*self.trash,
+                },
+                CipherList::Favourites => CipherListRef {
+                    name: "Favourites",
+                    contents: &*self.favourites,
                 },
                 CipherList::TypeBucket(cipher_type) => CipherListRef {
                     name: match cipher_type {
@@ -285,6 +295,7 @@ fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Ci
         id: cipher.id,
         r#type,
         deleted: cipher.deleted_date.is_some(),
+        favourite: cipher.favourite,
         name,
         icon,
         reprompt: cipher.reprompt,
@@ -510,6 +521,7 @@ struct Cipher {
     /// Used to sort ciphers into type buckets.
     r#type: CipherType,
     deleted: bool,
+    favourite: bool,
     name: String,
     icon: Option<Icon>,
     reprompt: bool,

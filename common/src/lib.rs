@@ -142,6 +142,11 @@ pub mod menu_keybinds {
             description: "Trash",
         },
         Keybind {
+            combination: "Alt+v",
+            action: Action::ShowList(CipherList::Favourites),
+            description: "Favourites",
+        },
+        Keybind {
             combination: "Alt+l",
             action: Action::ShowList(CipherList::TypeBucket(CipherType::Login)),
             description: "Logins",
@@ -172,13 +177,13 @@ pub mod menu_keybinds {
     /// Keybinds that select a category (all, trash) to be shown.
     #[must_use]
     pub fn categories() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[3..5]
+        &MENU_KEYBINDS[3..6]
     }
 
     /// Keybinds that select a specific type bucket to be shown.
     #[must_use]
     pub fn type_buckets() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[5..]
+        &MENU_KEYBINDS[6..]
     }
 
     use crate::CipherList;
@@ -190,6 +195,7 @@ pub mod menu_keybinds {
 pub enum CipherList {
     All,
     Trash,
+    Favourites,
     TypeBucket(CipherType),
 }
 
