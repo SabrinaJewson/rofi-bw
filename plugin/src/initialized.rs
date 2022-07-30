@@ -136,9 +136,9 @@ impl Initialized {
     pub(crate) fn ipc_view(&self) -> ipc::View {
         match self.state.viewing() {
             Viewing::CipherList(list) => ipc::View::CipherList(list.list),
-            Viewing::Cipher(cipher) => ipc::View::Cipher {
-                uuid: cipher.id.into_bytes(),
-            },
+            Viewing::Cipher(cipher) => {
+                ipc::View::Cipher(ipc::CipherFilter::Uuid(cipher.id.into_bytes()))
+            }
         }
     }
 }
@@ -191,11 +191,9 @@ impl State {
         Ok(Self {
             view: match view {
                 ipc::View::CipherList(list) => View::CipherList(list),
-                ipc::View::Cipher { uuid } => {
-                    let uuid = Uuid::from_bytes(uuid);
-                    if let Some((i, _)) = ciphers.enumerated().find(|(_, cipher)| cipher.id == uuid)
-                    {
-                        View::Cipher(i)
+                ipc::View::Cipher(filter) => {
+                    if let Some(index) = ciphers.filter(&filter) {
+                        View::Cipher(index)
                     } else {
                         View::CipherList(CipherList::All)
                     }
@@ -468,6 +466,18 @@ mod cipher_set {
                 .enumerate()
                 .map(|(i, cipher)| (Index(i), cipher))
         }
+        pub(crate) fn filter(&self, filter: &CipherFilter) -> Option<Index> {
+            // TODO: Maybe parallelize this
+            Some(Index(match filter {
+                &CipherFilter::Uuid(uuid) => {
+                    let uuid = Uuid::from_bytes(uuid);
+                    self.0.iter().position(|cipher| cipher.id == uuid)?
+                }
+                CipherFilter::Name(name) => {
+                    self.0.iter().position(|cipher| *cipher.name == **name)?
+                }
+            }))
+        }
     }
 
     impl ops::Index<Index> for CipherSet {
@@ -497,7 +507,9 @@ mod cipher_set {
 
     use super::Cipher;
     use core::slice;
+    use rofi_bw_common::ipc::CipherFilter;
     use std::ops;
+    use uuid::Uuid;
 }
 
 use cipher_type_list::CipherTypeList;

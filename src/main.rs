@@ -31,9 +31,14 @@ struct Args {
     #[clap(short, long, default_value = "")]
     filter: String,
 
-    /// The UUID of the cipher that rofi-bw will open showing; mutually exclusive with `--show`.
-    #[clap(long, conflicts_with = "show")]
+    /// The UUID of the cipher that rofi-bw will open showing;
+    /// mutually exclusive with `--cipher-name` and `--show`.
+    #[clap(long, conflicts_with = "cipher-name", conflicts_with = "show")]
     cipher_uuid: Option<Uuid>,
+
+    /// The name of the cipher that rofi-bw will open showing (must be an exact match).
+    #[clap(long, conflicts_with = "show")]
+    cipher_name: Option<String>,
 
     /// Which cipher list rofi-bw will open showing; mutually exclusive with `--cipher-uuid`.
     #[clap(long, value_enum)]
@@ -63,42 +68,19 @@ enum Show {
     Identities,
 }
 
-fn try_main(
-    Args {
-        filter,
+fn try_main(args: Args) -> anyhow::Result<()> {
+    let ProcessedArgs {
+        request,
         config_file,
-        cipher_uuid,
-        show,
-    }: Args,
-) -> anyhow::Result<()> {
+    } = process_args(args)?;
+
     let project_dirs = ProjectDirs::from("", "", "rofi-bw").context("no home directory")?;
 
     let runtime_dir = project_dirs
         .runtime_dir()
         .context("failed to locate runtime directory")?;
 
-    let display = env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
-
-    let request = daemon::Request::ShowMenu(daemon::ShowMenu {
-        display,
-        filter,
-        view: match (cipher_uuid, show) {
-            (Some(uuid), None) => ipc::View::Cipher {
-                uuid: uuid.into_bytes(),
-            },
-            (None, Some(show)) => ipc::View::CipherList(match show {
-                Show::All => CipherList::All,
-                Show::Trash => CipherList::Trash,
-                Show::Favourites => CipherList::Favourites,
-                Show::Logins => CipherList::TypeBucket(CipherType::Login),
-                Show::SecureNotes => CipherList::TypeBucket(CipherType::SecureNote),
-                Show::Cards => CipherList::TypeBucket(CipherType::Card),
-                Show::Identities => CipherList::TypeBucket(CipherType::Identity),
-            }),
-            (None, None) => ipc::View::default(),
-            (Some(_), Some(_)) => unreachable!("args are mutually exclusive"),
-        },
-    });
+    let request = daemon::Request::ShowMenu(request);
     if daemon::invoke(runtime_dir, &request)? {
         return Ok(());
     }
@@ -164,6 +146,50 @@ fn try_main(
     }
 
     Ok(())
+}
+
+struct ProcessedArgs {
+    request: daemon::ShowMenu,
+    config_file: Option<fs::PathBuf>,
+}
+
+fn process_args(
+    Args {
+        filter,
+        cipher_uuid,
+        cipher_name,
+        show,
+        config_file,
+    }: Args,
+) -> anyhow::Result<ProcessedArgs> {
+    let display = env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
+
+    let request = daemon::ShowMenu {
+        display,
+        filter,
+        view: match (cipher_uuid, cipher_name, show) {
+            (Some(uuid), None, None) => {
+                ipc::View::Cipher(ipc::CipherFilter::Uuid(uuid.into_bytes()))
+            }
+            (None, Some(name), None) => ipc::View::Cipher(ipc::CipherFilter::Name(name)),
+            (None, None, Some(show)) => ipc::View::CipherList(match show {
+                Show::All => CipherList::All,
+                Show::Trash => CipherList::Trash,
+                Show::Favourites => CipherList::Favourites,
+                Show::Logins => CipherList::TypeBucket(CipherType::Login),
+                Show::SecureNotes => CipherList::TypeBucket(CipherType::SecureNote),
+                Show::Cards => CipherList::TypeBucket(CipherType::Card),
+                Show::Identities => CipherList::TypeBucket(CipherType::Identity),
+            }),
+            (None, None, None) => ipc::View::default(),
+            _ => unreachable!("args are mutually exclusive"),
+        },
+    };
+
+    Ok(ProcessedArgs {
+        request,
+        config_file,
+    })
 }
 
 struct SessionManager<'dirs, 'http, 'client_id> {
@@ -295,7 +321,7 @@ fn try_show_menu(
     let handshake = ipc::Handshake {
         master_key: session.master_key(),
         data: session.account_data().as_bytes(),
-        view: request.view,
+        view: &request.view,
     };
 
     let res = menu::run(

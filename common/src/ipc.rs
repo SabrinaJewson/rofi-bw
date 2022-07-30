@@ -5,20 +5,21 @@ pub const PIPE_FD_ENV_VAR: &str = "ROFI_BW_PIPE_FD";
 pub use handshake::Handshake;
 pub mod handshake {
     #[derive(Clone, Copy, bincode::Encode, bincode::Decode)]
-    pub struct Handshake<MasterKeyT, DataT> {
+    pub struct Handshake<MasterKeyT, DataT, ViewT> {
         pub master_key: MasterKeyT,
         pub data: DataT,
-        pub view: View,
+        pub view: ViewT,
     }
 
-    pub fn write<W, MasterKeyT, DataT>(
+    pub fn write<W, MasterKeyT, DataT, ViewT>(
         mut writer: W,
-        handshake: &Handshake<MasterKeyT, DataT>,
+        handshake: &Handshake<MasterKeyT, DataT, ViewT>,
     ) -> Result<(), WriteError>
     where
         W: io::Write,
         MasterKeyT: Borrow<MasterKey> + bincode::Encode,
         DataT: Borrow<[u8]> + bincode::Encode,
+        ViewT: Borrow<View> + bincode::Encode,
     {
         let config = bincode::config::standard();
         bincode::encode_into_std_write(handshake, &mut writer, config).map_err(WriteError)?;
@@ -42,7 +43,7 @@ pub mod handshake {
 
     pub fn read<R: io::BufRead>(
         mut reader: R,
-    ) -> Result<Handshake<MasterKey, Box<[u8]>>, ReadError> {
+    ) -> Result<Handshake<MasterKey, Box<[u8]>, View>, ReadError> {
         let config = bincode::config::standard();
         bincode::decode_from_std_read(&mut reader, config).map_err(ReadError)
     }
@@ -158,16 +159,22 @@ pub mod menu_request {
     use std::io;
 }
 
-#[derive(Debug, Clone, Copy, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub enum View {
     CipherList(CipherList),
-    Cipher { uuid: [u8; 16] },
+    Cipher(CipherFilter),
 }
 
 impl Default for View {
     fn default() -> Self {
         Self::CipherList(CipherList::All)
     }
+}
+
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub enum CipherFilter {
+    Uuid([u8; 16]),
+    Name(String),
 }
 
 use crate::CipherList;

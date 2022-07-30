@@ -1,6 +1,6 @@
 pub(crate) fn run(
     lib_dir: &OsStr,
-    handshake: &ipc::Handshake<&MasterKey, &[u8]>,
+    handshake: &ipc::Handshake<&MasterKey, &[u8], &ipc::View>,
     rofi_options: &config::RofiOptions,
     display: &str,
     filter: &str,
