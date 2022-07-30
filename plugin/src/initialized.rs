@@ -186,15 +186,15 @@ impl State {
     pub(crate) fn viewing(&self) -> Viewing<'_> {
         match self.view {
             View::CipherList(view) => Viewing::CipherList(match view {
-                CipherList::All => CipherList2Todo {
+                CipherList::All => CipherListRef {
                     name: "All ciphers",
                     contents: &*self.all,
                 },
-                CipherList::Trash => CipherList2Todo {
+                CipherList::Trash => CipherListRef {
                     name: "Trash",
                     contents: &*self.trash,
                 },
-                CipherList::TypeBucket(cipher_type) => CipherList2Todo {
+                CipherList::TypeBucket(cipher_type) => CipherListRef {
                     name: match cipher_type {
                         CipherType::Login => "Logins",
                         CipherType::SecureNote => "Secure notes",
@@ -210,7 +210,7 @@ impl State {
 }
 
 enum Viewing<'a> {
-    CipherList(CipherList2Todo<'a>),
+    CipherList(CipherListRef<'a>),
     Cipher(&'a Cipher),
 }
 
@@ -223,8 +223,7 @@ impl Viewing<'_> {
     }
 }
 
-// TODO: rename lol
-struct CipherList2Todo<'a> {
+struct CipherListRef<'a> {
     name: &'static str,
     contents: &'a [cipher_set::Index],
 }
