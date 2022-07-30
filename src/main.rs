@@ -27,9 +27,17 @@ fn main() -> process::ExitCode {
 /// Rofi interface to Bitwarden.
 #[derive(clap::Parser)]
 struct Args {
-    /// The initial filter to use in Rofi
+    /// The initial filter to use in Rofi.
     #[clap(short, long, default_value = "")]
     filter: String,
+
+    /// The UUID of the cipher that rofi-bw will open showing; mutually exclusive with `--show`.
+    #[clap(long, conflicts_with = "show")]
+    cipher_uuid: Option<Uuid>,
+
+    /// Which cipher list rofi-bw will open showing; mutually exclusive with `--cipher-uuid`.
+    #[clap(long, value_enum)]
+    show: Option<Show>,
 
     /// Path to the config file; defaults to `$XDG_CONFIG_DIR/rofi-bw/config.toml`.
     ///
@@ -38,10 +46,29 @@ struct Args {
     config_file: Option<fs::PathBuf>,
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Show {
+    All,
+    #[clap(alias = "bin")]
+    Trash,
+    #[clap(alias = "favourite", alias = "favorites", alias = "favorite")]
+    Favourites,
+    #[clap(alias = "login")]
+    Logins,
+    #[clap(alias = "secure-note", alias = "notes", alias = "note")]
+    SecureNotes,
+    #[clap(alias = "card")]
+    Cards,
+    #[clap(alias = "identity")]
+    Identities,
+}
+
 fn try_main(
     Args {
         filter,
         config_file,
+        cipher_uuid,
+        show,
     }: Args,
 ) -> anyhow::Result<()> {
     let project_dirs = ProjectDirs::from("", "", "rofi-bw").context("no home directory")?;
@@ -55,8 +82,22 @@ fn try_main(
     let request = daemon::Request::ShowMenu(daemon::ShowMenu {
         display,
         filter,
-        // TODO: Allow configuring this
-        view: ipc::View::default(),
+        view: match (cipher_uuid, show) {
+            (Some(uuid), None) => ipc::View::Cipher {
+                uuid: uuid.into_bytes(),
+            },
+            (None, Some(show)) => ipc::View::CipherList(match show {
+                Show::All => CipherList::All,
+                Show::Trash => CipherList::Trash,
+                Show::Favourites => CipherList::Favourites,
+                Show::Logins => CipherList::TypeBucket(CipherType::Login),
+                Show::SecureNotes => CipherList::TypeBucket(CipherType::SecureNote),
+                Show::Cards => CipherList::TypeBucket(CipherType::Card),
+                Show::Identities => CipherList::TypeBucket(CipherType::Identity),
+            }),
+            (None, None) => ipc::View::default(),
+            (Some(_), Some(_)) => unreachable!("args are mutually exclusive"),
+        },
     });
     if daemon::invoke(runtime_dir, &request)? {
         return Ok(());
@@ -512,8 +553,11 @@ use daemon::Daemon;
 use directories::ProjectDirs;
 use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
+use rofi_bw_common::CipherList;
+use rofi_bw_common::CipherType;
 use rofi_bw_common::Keybind;
 use std::convert::Infallible;
 use std::env;
 use std::ffi::OsString;
 use std::process;
+use uuid::Uuid;
