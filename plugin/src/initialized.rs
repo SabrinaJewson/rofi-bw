@@ -1,78 +1,36 @@
 pub(crate) struct Initialized {
-    view: View,
-    ciphers: Vec<Cipher>,
+    state: State,
     icons: BwIcons,
     // Currently unused, but may be useful in future
     error_message: String,
-}
-
-enum View {
-    All,
-    Cipher(usize),
-}
-
-struct Cipher {
-    id: Uuid,
-    name: String,
-    icon: Option<Icon>,
-    reprompt: bool,
-    fields: Vec<Field>,
-    default_copy: Option<usize>,
-}
-
-struct Field {
-    display: Cow<'static, str>,
-    action: Option<Action>,
-}
-
-enum Action {
-    Copy {
-        name: Cow<'static, str>,
-        data: String,
-        /// Used to check whether a reprompt is necessary.
-        hidden: bool,
-    },
-    Link {
-        to: &'static str,
-    },
-}
-
-enum Icon {
-    Host(Arc<str>),
 }
 
 impl Initialized {
     pub(crate) fn new(master_key: &MasterKey, data: Data) -> anyhow::Result<Self> {
         let mut icons = BwIcons::new()?;
 
-        let key = data.profile.key.decrypt(master_key)?;
+        let state = State::new(master_key, data)?;
 
-        // TODO: Parallelize this
-        let mut ciphers = Vec::new();
-        for cipher in data.ciphers {
-            if let Some(cipher) = process_cipher(cipher, &key, &mut icons)? {
-                ciphers.push(cipher);
+        for cipher in &state.ciphers {
+            match &cipher.icon {
+                Some(Icon::Host(host)) => icons.start_fetch(host.clone()),
+                None => {}
             }
         }
 
-        ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-
         Ok(Self {
-            view: View::All,
-            ciphers,
+            state,
             icons,
             error_message: String::new(),
         })
     }
+}
 
+impl Initialized {
     pub(crate) const DISPLAY_NAME: &'static str = "bitwarden";
 
     pub(crate) fn status(&self, s: &mut rofi_mode::String) {
-        match self.view {
-            View::All => s.push_str("All ciphers"),
-            View::Cipher(i) => s.push_str(&*self.ciphers[i].name),
-        }
-
+        s.push_str(self.state.viewing().name());
         s.push_str("\n");
 
         if !self.error_message.is_empty() {
@@ -81,35 +39,41 @@ impl Initialized {
     }
 
     pub(crate) fn entries(&self) -> usize {
-        match self.view {
-            View::All => self.ciphers.len(),
-            View::Cipher(i) => self.ciphers[i].fields.len(),
+        match self.state.viewing() {
+            Viewing::CipherList(list) => list.contents.len(),
+            Viewing::Cipher(cipher) => cipher.fields.len(),
         }
     }
 
     pub(crate) fn entry_content(&self, line: usize) -> &str {
-        match self.view {
-            View::All => &*self.ciphers[line].name,
-            View::Cipher(i) => &*self.ciphers[i].fields[line].display,
+        match self.state.viewing() {
+            Viewing::CipherList(list) => &*self.state.ciphers[list.contents[line]].name,
+            Viewing::Cipher(cipher) => &*cipher.fields[line].display,
         }
     }
 
     pub(crate) fn entry_icon(&mut self, line: usize) -> Option<cairo::Surface> {
-        match self.view {
-            View::All => match self.ciphers[line].icon.as_ref()? {
-                Icon::Host(host) => self.icons.surface(host),
-            },
-            View::Cipher(_) => None,
+        match self.state.viewing() {
+            Viewing::CipherList(list) => {
+                match self.state.ciphers[list.contents[line]].icon.as_ref()? {
+                    Icon::Host(host) => self.icons.surface(host),
+                }
+            }
+            Viewing::Cipher(_) => None,
         }
     }
 
+    pub(crate) fn show(&mut self, list: CipherList) {
+        self.state.view = View::CipherList(list);
+    }
+
     pub(crate) fn ok_alt(&mut self, line: usize, input: &mut rofi_mode::String) {
-        match self.view {
-            View::All => {
+        match self.state.viewing() {
+            Viewing::CipherList(list) => {
                 input.clear();
-                self.view = View::Cipher(line);
+                self.state.view = View::Cipher(list.contents[line]);
             }
-            View::Cipher(_) => {}
+            Viewing::Cipher(_) => {}
         }
     }
 
@@ -118,28 +82,28 @@ impl Initialized {
         line: usize,
         input: &mut rofi_mode::String,
     ) -> Option<ipc::MenuRequest> {
-        let (cipher, field) = match self.view {
-            View::All => {
-                let cipher = &self.ciphers[line];
+        let (cipher, field) = match self.state.viewing() {
+            Viewing::CipherList(list) => {
+                let cipher = &self.state.ciphers[list.contents[line]];
                 match cipher.default_copy {
                     Some(default_copy) => (cipher, default_copy),
                     None => {
                         input.clear();
-                        self.view = View::Cipher(line);
+                        self.state.view = View::Cipher(list.contents[line]);
                         return None;
                     }
                 }
             }
-            View::Cipher(i) => {
-                let cipher = &self.ciphers[i];
-                (cipher, line)
-            }
+            Viewing::Cipher(cipher) => (cipher, line),
         };
 
         let field = &cipher.fields[field];
 
         match field.action.as_ref()? {
             Action::Copy { name, data, hidden } => {
+                let cipher_name = cipher.name.clone();
+                let reprompt = *hidden && cipher.reprompt;
+
                 let image_path = match &cipher.icon {
                     Some(Icon::Host(host)) => self
                         .icons
@@ -150,11 +114,11 @@ impl Initialized {
                 };
 
                 Some(ipc::MenuRequest::Copy {
-                    cipher_name: cipher.name.clone(),
+                    cipher_name,
                     field: name.clone().into_owned(),
                     data: data.to_string(),
                     image_path,
-                    reprompt: *hidden && cipher.reprompt,
+                    reprompt,
                     menu_state: ipc::menu_request::MenuState {
                         filter: input.to_string(),
                     },
@@ -169,11 +133,94 @@ impl Initialized {
     }
 }
 
-fn process_cipher(
-    cipher: data::Cipher,
-    key: &SymmetricKey,
-    icons: &mut BwIcons,
-) -> anyhow::Result<Option<Cipher>> {
+struct State {
+    view: View,
+    ciphers: CipherSet,
+    all: Vec<cipher_set::Index>,
+    type_buckets: CipherTypeList<Vec<cipher_set::Index>>,
+}
+
+#[derive(Clone, Copy)]
+enum View {
+    CipherList(CipherList),
+    Cipher(cipher_set::Index),
+}
+
+impl State {
+    pub(crate) fn new(master_key: &MasterKey, data: Data) -> anyhow::Result<Self> {
+        let key = data.profile.key.decrypt(master_key)?;
+
+        // TODO: Parallelize this
+        let mut ciphers = Vec::new();
+        for cipher in data.ciphers {
+            if let Some(cipher) = process_cipher(cipher, &key)? {
+                ciphers.push(cipher);
+            }
+        }
+
+        ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+
+        let ciphers = CipherSet::from_vec(ciphers);
+
+        let all = ciphers.enumerated().map(|(i, _)| i).collect();
+
+        let mut type_buckets = <CipherTypeList<Vec<cipher_set::Index>>>::default();
+        for (i, cipher) in ciphers.enumerated() {
+            type_buckets[cipher.r#type].push(i);
+        }
+
+        Ok(Self {
+            // TODO: Allow configuring this
+            view: View::CipherList(CipherList::All),
+            ciphers,
+            all,
+            type_buckets,
+        })
+    }
+
+    pub(crate) fn viewing(&self) -> Viewing<'_> {
+        match self.view {
+            View::CipherList(view) => Viewing::CipherList(match view {
+                CipherList::All => CipherList2Todo {
+                    name: "All ciphers",
+                    contents: &*self.all,
+                },
+                CipherList::TypeBucket(cipher_type) => CipherList2Todo {
+                    name: match cipher_type {
+                        CipherType::Login => "Logins",
+                        CipherType::SecureNote => "Secure notes",
+                        CipherType::Card => "Cards",
+                        CipherType::Identity => "Identities",
+                    },
+                    contents: &*self.type_buckets[cipher_type],
+                },
+            }),
+            View::Cipher(i) => Viewing::Cipher(&self.ciphers[i]),
+        }
+    }
+}
+
+enum Viewing<'a> {
+    CipherList(CipherList2Todo<'a>),
+    Cipher(&'a Cipher),
+}
+
+impl Viewing<'_> {
+    fn name(&self) -> &str {
+        match self {
+            Self::CipherList(list) => list.name,
+            Self::Cipher(cipher) => &*cipher.name,
+        }
+    }
+}
+
+struct CipherList2Todo<'a> {
+    name: &'static str,
+    contents: &'a [cipher_set::Index],
+}
+
+fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Option<Cipher>> {
+    // TODO: show bin
     if cipher.deleted_date.is_some() {
         return Ok(None);
     }
@@ -182,25 +229,31 @@ fn process_cipher(
 
     let mut fields = Vec::new();
     let mut default_copy = None;
+    let icon;
 
-    let icon = match cipher.data {
-        CipherData::Login(login) => process_login(login, key, &mut fields, &mut default_copy)?,
+    let r#type = match cipher.data {
+        CipherData::Login(login) => {
+            icon = process_login(login, key, &mut fields, &mut default_copy)?;
+            CipherType::Login
+        }
         CipherData::SecureNote => {
             // The default copy of a secure note should be its note, unlike any other cipher data
             // type. This works because the next field we add is always the note field.
             if cipher.notes.is_some() {
                 default_copy = Some(fields.len());
             }
-            None
+            icon = None;
+            CipherType::SecureNote
         }
-        CipherData::Card(card) => process_card(card, key, &mut fields)?,
-        CipherData::Identity(identity) => process_identity(identity, key, &mut fields)?,
+        CipherData::Card(card) => {
+            icon = process_card(card, key, &mut fields)?;
+            CipherType::Card
+        }
+        CipherData::Identity(identity) => {
+            icon = process_identity(identity, key, &mut fields)?;
+            CipherType::Identity
+        }
     };
-
-    match &icon {
-        Some(Icon::Host(host)) => icons.start_fetch(host.clone()),
-        None => {}
-    }
 
     if let Some(notes) = cipher.notes {
         fields.push(Field::notes(notes.decrypt(key)?));
@@ -226,6 +279,7 @@ fn process_cipher(
 
     Ok(Some(Cipher {
         id: cipher.id,
+        r#type,
         name,
         icon,
         reprompt: cipher.reprompt,
@@ -357,6 +411,109 @@ fn process_identity(
     }
 
     Ok(None)
+}
+
+fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
+    let url = login.uri.as_ref()?.decrypt(key).ok()?;
+    let url = url.trim();
+    // Algorithm taken from:
+    // https://github.com/bitwarden/clients/blob/9eefb4ad169dc1ca08073922c78faafd12cb2752/libs/common/src/misc/utils.ts#L339
+    let url = Url::parse(&*url).ok().or_else(|| {
+        if url.starts_with("http://") || url.starts_with("https://") || !url.contains(".") {
+            return None;
+        }
+        Url::parse(&*format!("http://{url}")).ok()
+    })?;
+
+    match url.host()? {
+        url::Host::Domain(domain) => Some(<Arc<str>>::from(domain)),
+        _ => None,
+    }
+}
+
+use cipher_set::CipherSet;
+/// Newtype over a `Vec<Cipher>` for type-safety.
+mod cipher_set {
+    pub(super) struct CipherSet(Vec<Cipher>);
+
+    impl CipherSet {
+        pub(super) const fn from_vec(vec: Vec<Cipher>) -> Self {
+            Self(vec)
+        }
+        pub(crate) fn enumerated(&self) -> impl Iterator<Item = (Index, &Cipher)> {
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(i, cipher)| (Index(i), cipher))
+        }
+    }
+
+    impl ops::Index<Index> for CipherSet {
+        type Output = Cipher;
+
+        fn index(&self, index: Index) -> &Self::Output {
+            &self.0[index.0]
+        }
+    }
+
+    impl ops::IndexMut<Index> for CipherSet {
+        fn index_mut(&mut self, index: Index) -> &mut Self::Output {
+            &mut self.0[index.0]
+        }
+    }
+
+    impl<'cipher_set> IntoIterator for &'cipher_set CipherSet {
+        type Item = &'cipher_set Cipher;
+        type IntoIter = slice::Iter<'cipher_set, Cipher>;
+        fn into_iter(self) -> Self::IntoIter {
+            self.0.iter()
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(crate) struct Index(usize);
+
+    use super::Cipher;
+    use core::slice;
+    use std::ops;
+}
+
+use cipher_type_list::CipherTypeList;
+mod cipher_type_list {
+    #[derive(Default)]
+    pub(crate) struct CipherTypeList<T>([T; 4]);
+
+    impl<T> ops::Index<CipherType> for CipherTypeList<T> {
+        type Output = T;
+        fn index(&self, index: CipherType) -> &Self::Output {
+            &self.0[index as usize]
+        }
+    }
+
+    impl<T> ops::IndexMut<CipherType> for CipherTypeList<T> {
+        fn index_mut(&mut self, index: CipherType) -> &mut Self::Output {
+            &mut self.0[index as usize]
+        }
+    }
+
+    use super::CipherType;
+    use std::ops;
+}
+
+struct Cipher {
+    id: Uuid,
+    /// Used to sort ciphers into type buckets.
+    r#type: CipherType,
+    name: String,
+    icon: Option<Icon>,
+    reprompt: bool,
+    fields: Vec<Field>,
+    default_copy: Option<usize>,
+}
+
+struct Field {
+    display: Cow<'static, str>,
+    action: Option<Action>,
 }
 
 impl Field {
@@ -561,22 +718,20 @@ enum FieldValue {
     Linked(data::Linked),
 }
 
-fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
-    let url = login.uri.as_ref()?.decrypt(key).ok()?;
-    let url = url.trim();
-    // Algorithm taken from:
-    // https://github.com/bitwarden/clients/blob/9eefb4ad169dc1ca08073922c78faafd12cb2752/libs/common/src/misc/utils.ts#L339
-    let url = Url::parse(&*url).ok().or_else(|| {
-        if url.starts_with("http://") || url.starts_with("https://") || !url.contains(".") {
-            return None;
-        }
-        Url::parse(&*format!("http://{url}")).ok()
-    })?;
+enum Action {
+    Copy {
+        name: Cow<'static, str>,
+        data: String,
+        /// Used to check whether a reprompt is necessary.
+        hidden: bool,
+    },
+    Link {
+        to: &'static str,
+    },
+}
 
-    match url.host()? {
-        url::Host::Domain(domain) => Some(<Arc<str>>::from(domain)),
-        _ => None,
-    }
+enum Icon {
+    Host(Arc<str>),
 }
 
 use crate::data;
@@ -586,6 +741,8 @@ use crate::symmetric_key::SymmetricKey;
 use crate::BwIcons;
 use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
+use rofi_bw_common::CipherList;
+use rofi_bw_common::CipherType;
 use rofi_bw_common::MasterKey;
 use rofi_mode::cairo;
 use std::borrow::Cow;

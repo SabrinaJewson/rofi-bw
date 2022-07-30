@@ -9,6 +9,7 @@
 )]
 #![allow(
     clippy::large_enum_variant,
+    clippy::match_wildcard_for_single_variants,
     clippy::struct_excessive_bools,
     clippy::needless_pass_by_value,
     clippy::single_char_pattern,
@@ -36,6 +37,13 @@ impl Mode<'_> {
         match &self.state {
             State::Initialized(initialized) => initialized.entry_content(line),
             State::Errored(_) => panic!("this mode has no entries"),
+        }
+    }
+
+    fn initialized_mut(&mut self) -> Option<&mut Initialized> {
+        match &mut self.state {
+            State::Initialized(initialized) => Some(initialized),
+            _ => None,
         }
     }
 }
@@ -129,6 +137,12 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                     None => return rofi_mode::Action::Reload,
                 };
                 let request = match keybind.action {
+                    menu_keybinds::Action::ShowList(list) => {
+                        if let Some(initialized) = self.initialized_mut() {
+                            initialized.show(list);
+                        }
+                        return rofi_mode::Action::Reload;
+                    }
                     menu_keybinds::Action::Sync => ipc::MenuRequest::Sync {
                         menu_state: ipc::menu_request::MenuState {
                             filter: input.to_string(),
@@ -157,7 +171,12 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         let mut message = rofi_mode::String::new();
 
         if self.pipe.is_some() {
-            writeln!(message, "{}", keybind::HelpMarkup(MENU_KEYBINDS)).unwrap();
+            writeln!(message, "{}", keybind::HelpMarkup(menu_keybinds::no_data())).unwrap();
+
+            if self.initialized_mut().is_some() {
+                let binds = menu_keybinds::needs_data();
+                writeln!(message, "{}", keybind::HelpMarkup(binds)).unwrap();
+            }
         }
 
         match &self.state {

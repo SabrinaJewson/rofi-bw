@@ -65,6 +65,7 @@ pub mod ipc;
 
 pub use keybind::Keybind;
 pub mod keybind {
+    #[derive(Clone, Copy)]
     pub struct Keybind<Action> {
         pub combination: &'static str,
         pub action: Action,
@@ -105,7 +106,9 @@ pub mod keybind {
 
 pub use menu_keybinds::MENU_KEYBINDS;
 pub mod menu_keybinds {
+    #[derive(Clone, Copy)]
     pub enum Action {
+        ShowList(CipherList),
         Sync,
         Lock,
         LogOut,
@@ -128,9 +131,62 @@ pub mod menu_keybinds {
             action: Action::LogOut,
             description: "Log out",
         },
+        Keybind {
+            combination: "Alt+a",
+            action: Action::ShowList(CipherList::All),
+            description: "All",
+        },
+        Keybind {
+            combination: "Alt+l",
+            action: Action::ShowList(CipherList::TypeBucket(CipherType::Login)),
+            description: "Logins",
+        },
+        Keybind {
+            combination: "Alt+n",
+            action: Action::ShowList(CipherList::TypeBucket(CipherType::SecureNote)),
+            description: "Secure notes",
+        },
+        Keybind {
+            combination: "Alt+c",
+            action: Action::ShowList(CipherList::TypeBucket(CipherType::Card)),
+            description: "Cards",
+        },
+        Keybind {
+            combination: "Alt+i",
+            action: Action::ShowList(CipherList::TypeBucket(CipherType::Identity)),
+            description: "Identities",
+        },
     ];
 
+    /// Keybinds that work with a connection to `rofi-bw` but don't need the data to be loaded.
+    #[must_use]
+    pub fn no_data() -> &'static [Keybind<Action>] {
+        &MENU_KEYBINDS[0..3]
+    }
+
+    /// Keybinds that don't work without the data being loaded.
+    #[must_use]
+    pub fn needs_data() -> &'static [Keybind<Action>] {
+        &MENU_KEYBINDS[3..]
+    }
+
+    use crate::CipherList;
+    use crate::CipherType;
     use crate::Keybind;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CipherList {
+    All,
+    TypeBucket(CipherType),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CipherType {
+    Login = 0,
+    SecureNote = 1,
+    Card = 2,
+    Identity = 3,
 }
 
 pub mod fs;
