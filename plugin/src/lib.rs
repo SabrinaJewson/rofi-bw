@@ -285,6 +285,8 @@ mod base64_decode_array;
 
 mod disk_cache;
 
+mod parallel_try_fill;
+
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_bw_common::ipc::MenuRequest;

@@ -162,11 +162,17 @@ impl State {
     pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
         let key = data.profile.key.decrypt(master_key)?;
 
-        // TODO: Parallelize this
-        let mut ciphers = Vec::new();
-        for cipher in data.ciphers {
-            ciphers.push(process_cipher(cipher, &key)?);
-        }
+        let mut ciphers = (0..data.ciphers.len())
+            .map(|_| Cipher::safe_uninit())
+            .collect::<Vec<_>>();
+
+        parallel_try_fill(
+            data.ciphers
+                .into_par_iter()
+                .map(|cipher| process_cipher(cipher, &key)),
+            &mut *ciphers,
+        )?;
+
         ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
         let ciphers = CipherSet::from_vec(ciphers);
@@ -547,6 +553,22 @@ struct Cipher {
     default_copy: Option<usize>,
 }
 
+impl Cipher {
+    const fn safe_uninit() -> Self {
+        Self {
+            id: Uuid::nil(),
+            r#type: CipherType::Login,
+            deleted: false,
+            favourite: false,
+            name: String::new(),
+            icon: None,
+            reprompt: false,
+            fields: Vec::new(),
+            default_copy: None,
+        }
+    }
+}
+
 struct Field {
     display: Cow<'static, str>,
     action: Option<Action>,
@@ -773,8 +795,11 @@ enum Icon {
 use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
+use crate::parallel_try_fill::parallel_try_fill;
 use crate::symmetric_key::SymmetricKey;
 use crate::BwIcons;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::CipherList;
