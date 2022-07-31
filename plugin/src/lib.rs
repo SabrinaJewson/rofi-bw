@@ -287,6 +287,8 @@ mod disk_cache;
 
 mod parallel_try_fill;
 
+mod cairo_image_data;
+
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_bw_common::ipc::MenuRequest;
