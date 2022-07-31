@@ -179,8 +179,10 @@ struct State {
     favourites: Vec<typed_slice::Index<Cipher>>,
     type_buckets: CipherTypeList<Vec<typed_slice::Index<Cipher>>>,
     folders: Box<TypedSlice<Folder>>,
-    folder_map: HashMap<Option<Uuid>, typed_slice::Index<Folder>>,
+    folder_map: FolderMap,
 }
+
+type FolderMap = HashMap<Option<Uuid>, typed_slice::Index<Folder>>;
 
 #[derive(Clone, Copy)]
 enum View {
@@ -193,43 +195,12 @@ impl State {
     pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
         let key = data.profile.key.decrypt(master_key)?;
 
-        let mut folders = Vec::with_capacity(data.folders.len() + 1);
-
-        for folder in data.folders {
-            folders.push(process_folder(folder, &key)?);
-        }
-
-        // TODO: Use a proper Unicode sort
-        folders.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-
-        folders.push(Folder {
-            id: None,
-            name: "No folder".to_owned(),
-            contents: Vec::new(),
-        });
-
-        let mut folders = TypedSlice::from_boxed_slice(folders.into_boxed_slice());
-
-        let folder_map = folders
-            .enumerated()
-            .map(|(i, folder)| (folder.id, i))
-            .collect::<HashMap<Option<Uuid>, typed_slice::Index<Folder>>>();
-
-        let mut ciphers = (0..data.ciphers.len())
-            .map(|_| Cipher::safe_uninit())
-            .collect::<Box<[_]>>();
-
-        parallel_try_fill(
-            data.ciphers
-                .into_par_iter()
-                .map(|cipher| process_cipher(cipher, &key)),
-            &mut *ciphers,
-        )?;
-
-        // TODO: Use a proper Unicode sort
-        ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
-
-        let ciphers = TypedSlice::from_boxed_slice(ciphers);
+        let (folders_result, ciphers_result) = rayon::join(
+            || process_folders(data.folders, &key),
+            || process_ciphers(data.ciphers, &key),
+        );
+        let (mut folders, folder_map) = folders_result?;
+        let ciphers = ciphers_result?;
 
         let mut all = Vec::new();
         let mut trash = Vec::new();
@@ -313,6 +284,56 @@ enum Viewing<'a> {
     CipherList(&'a [typed_slice::Index<Cipher>]),
     Folders(&'a TypedSlice<Folder>),
     Cipher(&'a Cipher),
+}
+
+fn process_folders(
+    folders: Vec<data::Folder>,
+    key: &SymmetricKey,
+) -> anyhow::Result<(Box<TypedSlice<Folder>>, FolderMap)> {
+    let mut processed = Vec::with_capacity(folders.len() + 1);
+
+    for folder in folders {
+        processed.push(process_folder(folder, key)?);
+    }
+
+    // TODO: Use a proper Unicode sort
+    processed.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+
+    processed.push(Folder {
+        id: None,
+        name: "No folder".to_owned(),
+        contents: Vec::new(),
+    });
+
+    let processed = TypedSlice::from_boxed_slice(processed.into_boxed_slice());
+
+    let map = processed
+        .enumerated()
+        .map(|(i, folder)| (folder.id, i))
+        .collect::<HashMap<Option<Uuid>, typed_slice::Index<Folder>>>();
+
+    Ok((processed, map))
+}
+
+fn process_ciphers(
+    ciphers: Vec<data::Cipher>,
+    key: &SymmetricKey,
+) -> anyhow::Result<Box<TypedSlice<Cipher>>> {
+    let mut processed = (0..ciphers.len())
+        .map(|_| Cipher::safe_uninit())
+        .collect::<Box<[_]>>();
+
+    parallel_try_fill(
+        ciphers
+            .into_par_iter()
+            .map(|cipher| process_cipher(cipher, key)),
+        &mut *processed,
+    )?;
+
+    // TODO: Use a proper Unicode sort
+    processed.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+
+    Ok(TypedSlice::from_boxed_slice(processed))
 }
 
 fn process_folder(folder: data::Folder, key: &SymmetricKey) -> anyhow::Result<Folder> {
