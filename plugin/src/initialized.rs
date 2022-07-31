@@ -27,7 +27,10 @@ impl Initialized {
     pub(crate) const DISPLAY_NAME: &'static str = "bitwarden";
 
     pub(crate) fn status(&self, s: &mut rofi_mode::String) {
-        s.push_str(self.state.viewing().description());
+        s.push_str(match self.state.view {
+            View::List(list) => list.description(),
+            View::Cipher(i) => &*self.state.ciphers[i].name,
+        });
         s.push_str("\n");
 
         if !self.error_message.is_empty() {
@@ -37,37 +40,41 @@ impl Initialized {
 
     pub(crate) fn entries(&self) -> usize {
         match self.state.viewing() {
-            Viewing::CipherList(list) => list.contents.len(),
+            Viewing::CipherList(list) => list.len(),
+            Viewing::Folders(folders) => folders.len(),
             Viewing::Cipher(cipher) => cipher.fields.len(),
         }
     }
 
     pub(crate) fn entry_content(&self, line: usize) -> &str {
         match self.state.viewing() {
-            Viewing::CipherList(list) => &*self.state.ciphers[list.contents[line]].name,
+            Viewing::CipherList(list) => &*self.state.ciphers[list[line]].name,
+            Viewing::Folders(folders) => &*folders[line].name,
             Viewing::Cipher(cipher) => &*cipher.fields[line].display,
         }
     }
 
     pub(crate) fn entry_icon(&mut self, line: usize, height: u32) -> Option<cairo::Surface> {
         let icon = match self.state.viewing() {
-            Viewing::CipherList(list) => &self.state.ciphers[list.contents[line]].icon,
+            Viewing::CipherList(list) => &self.state.ciphers[list[line]].icon,
+            Viewing::Folders(_) => &Icon::Glyph(icons::Glyph::Folder),
             Viewing::Cipher(cipher) => &cipher.fields[line].icon,
         };
         self.icons.surface(icon, height)
     }
 
-    pub(crate) fn show(&mut self, list: CipherList) {
-        self.state.view = View::CipherList(list);
+    pub(crate) fn show(&mut self, list: List) {
+        self.state.view = View::List(list);
     }
 
     pub(crate) fn ok_alt(&mut self, line: usize, input: &mut rofi_mode::String) {
         match self.state.viewing() {
             Viewing::CipherList(list) => {
                 input.clear();
-                self.state.view = View::Cipher(list.contents[line]);
+                self.state.view = View::Cipher(list[line]);
             }
-            Viewing::Cipher(_) => {}
+            // TODO: Open the folder
+            Viewing::Folders(_) | Viewing::Cipher(_) => {}
         }
     }
 
@@ -78,16 +85,18 @@ impl Initialized {
     ) -> Option<ipc::MenuRequest> {
         let (cipher, field) = match self.state.viewing() {
             Viewing::CipherList(list) => {
-                let cipher = &self.state.ciphers[list.contents[line]];
+                let cipher = &self.state.ciphers[list[line]];
                 match cipher.default_copy {
                     Some(default_copy) => (cipher, default_copy),
                     None => {
                         input.clear();
-                        self.state.view = View::Cipher(list.contents[line]);
+                        self.state.view = View::Cipher(list[line]);
                         return None;
                     }
                 }
             }
+            // TODO: open the folder
+            Viewing::Folders(_) => return None,
             Viewing::Cipher(cipher) => (cipher, line),
         };
 
@@ -125,10 +134,11 @@ impl Initialized {
     }
 
     pub(crate) fn ipc_view(&self) -> ipc::View {
-        match self.state.viewing() {
-            Viewing::CipherList(list) => ipc::View::CipherList(list.list),
-            Viewing::Cipher(cipher) => {
-                ipc::View::Cipher(ipc::CipherFilter::Uuid(cipher.id.into_bytes()))
+        match self.state.view {
+            View::List(list) => ipc::View::List(list),
+            View::Cipher(i) => {
+                let uuid = self.state.ciphers[i].id;
+                ipc::View::Cipher(ipc::CipherFilter::Uuid(uuid.into_bytes()))
             }
         }
     }
@@ -136,17 +146,18 @@ impl Initialized {
 
 struct State {
     view: View,
-    ciphers: CipherSet,
-    all: Vec<cipher_set::Index>,
-    trash: Vec<cipher_set::Index>,
-    favourites: Vec<cipher_set::Index>,
-    type_buckets: CipherTypeList<Vec<cipher_set::Index>>,
+    ciphers: TypedList<Cipher>,
+    all: Vec<typed_list::Index<Cipher>>,
+    trash: Vec<typed_list::Index<Cipher>>,
+    favourites: Vec<typed_list::Index<Cipher>>,
+    type_buckets: CipherTypeList<Vec<typed_list::Index<Cipher>>>,
+    folders: Vec<Folder>,
 }
 
 #[derive(Clone, Copy)]
 enum View {
-    CipherList(CipherList),
-    Cipher(cipher_set::Index),
+    List(List),
+    Cipher(typed_list::Index<Cipher>),
     // TODO: folder view
 }
 
@@ -168,7 +179,7 @@ impl State {
         // TODO: Use a proper Unicode sort
         ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
-        let ciphers = CipherSet::from_boxed_slice(ciphers);
+        let ciphers = TypedList::from_boxed_slice(ciphers);
 
         let mut all = Vec::new();
         let mut trash = Vec::new();
@@ -187,15 +198,30 @@ impl State {
             type_buckets[cipher.r#type].push(i);
         }
 
+        let mut folders = data
+            .folders
+            .into_iter()
+            .map(|folder| process_folder(folder, &key))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        // TODO: Use a proper Unicode sort
+        folders.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+
         Ok(Self {
             view: match view {
-                ipc::View::CipherList(list) => View::CipherList(list),
+                ipc::View::List(list) => View::List(list),
                 ipc::View::Cipher(filter) => {
-                    if let Some(index) = ciphers.filter(&filter) {
-                        View::Cipher(index)
-                    } else {
-                        View::CipherList(CipherList::All)
-                    }
+                    let index = match filter {
+                        ipc::CipherFilter::Uuid(uuid) => {
+                            let uuid = Uuid::from_bytes(uuid);
+                            ciphers.position(|cipher| cipher.id == uuid)
+                        }
+                        ipc::CipherFilter::Name(name) => {
+                            ciphers.position(|cipher| cipher.name == name)
+                        }
+                    };
+
+                    index.map_or(View::List(List::All), View::Cipher)
                 }
             },
             ciphers,
@@ -203,42 +229,42 @@ impl State {
             trash,
             favourites,
             type_buckets,
+            folders,
         })
     }
 
     pub(crate) fn viewing(&self) -> Viewing<'_> {
         match self.view {
-            View::CipherList(list) => Viewing::CipherList(CipherListRef {
-                list,
-                contents: match list {
-                    CipherList::All => &*self.all,
-                    CipherList::Trash => &*self.trash,
-                    CipherList::Favourites => &*self.favourites,
-                    CipherList::TypeBucket(cipher_type) => &*self.type_buckets[cipher_type],
-                },
-            }),
+            View::List(list) => match list {
+                List::All => Viewing::CipherList(&*self.all),
+                List::Trash => Viewing::CipherList(&*self.trash),
+                List::Favourites => Viewing::CipherList(&*self.favourites),
+                List::TypeBucket(cipher_type) => {
+                    Viewing::CipherList(&*self.type_buckets[cipher_type])
+                }
+                List::Folders => Viewing::Folders(&*self.folders),
+            },
             View::Cipher(i) => Viewing::Cipher(&self.ciphers[i]),
         }
     }
 }
 
 enum Viewing<'a> {
-    CipherList(CipherListRef<'a>),
+    CipherList(&'a [typed_list::Index<Cipher>]),
+    Folders(&'a [Folder]),
     Cipher(&'a Cipher),
 }
 
-impl Viewing<'_> {
-    fn description(&self) -> &str {
-        match self {
-            Self::CipherList(list) => list.list.description(),
-            Self::Cipher(cipher) => &*cipher.name,
-        }
-    }
+fn process_folder(folder: data::Folder, key: &SymmetricKey) -> anyhow::Result<Folder> {
+    Ok(Folder {
+        id: folder.id,
+        name: folder.name.decrypt(key)?,
+    })
 }
 
-struct CipherListRef<'a> {
-    list: CipherList,
-    contents: &'a [cipher_set::Index],
+struct Folder {
+    id: Uuid,
+    name: String,
 }
 
 fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Cipher> {
@@ -450,67 +476,6 @@ fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
         url::Host::Domain(domain) => Some(<Arc<str>>::from(domain)),
         _ => None,
     }
-}
-
-use cipher_set::CipherSet;
-/// Newtype over a `Box<[Cipher]>` for type-safety.
-mod cipher_set {
-    pub(super) struct CipherSet(Box<[Cipher]>);
-
-    impl CipherSet {
-        pub(super) const fn from_boxed_slice(slice: Box<[Cipher]>) -> Self {
-            Self(slice)
-        }
-        pub(crate) fn enumerated(&self) -> impl Iterator<Item = (Index, &Cipher)> {
-            self.0
-                .iter()
-                .enumerate()
-                .map(|(i, cipher)| (Index(i), cipher))
-        }
-        pub(crate) fn filter(&self, filter: &CipherFilter) -> Option<Index> {
-            // TODO: Maybe parallelize this
-            Some(Index(match filter {
-                &CipherFilter::Uuid(uuid) => {
-                    let uuid = Uuid::from_bytes(uuid);
-                    self.0.iter().position(|cipher| cipher.id == uuid)?
-                }
-                CipherFilter::Name(name) => {
-                    self.0.iter().position(|cipher| *cipher.name == **name)?
-                }
-            }))
-        }
-    }
-
-    impl ops::Index<Index> for CipherSet {
-        type Output = Cipher;
-
-        fn index(&self, index: Index) -> &Self::Output {
-            &self.0[index.0]
-        }
-    }
-
-    impl ops::IndexMut<Index> for CipherSet {
-        fn index_mut(&mut self, index: Index) -> &mut Self::Output {
-            &mut self.0[index.0]
-        }
-    }
-
-    impl<'cipher_set> IntoIterator for &'cipher_set CipherSet {
-        type Item = &'cipher_set Cipher;
-        type IntoIter = slice::Iter<'cipher_set, Cipher>;
-        fn into_iter(self) -> Self::IntoIter {
-            self.0.iter()
-        }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(crate) struct Index(usize);
-
-    use super::Cipher;
-    use core::slice;
-    use rofi_bw_common::ipc::CipherFilter;
-    use std::ops;
-    use uuid::Uuid;
 }
 
 use cipher_type_list::CipherTypeList;
@@ -810,6 +775,79 @@ enum Action {
     },
 }
 
+use typed_list::TypedList;
+/// Newtype over a `Box<[T]>` featuring `T`-dependent index types.
+mod typed_list {
+    pub(super) struct TypedList<T>(Box<[T]>);
+
+    impl<T> TypedList<T> {
+        pub(super) const fn from_boxed_slice(slice: Box<[T]>) -> Self {
+            Self(slice)
+        }
+        pub(crate) fn enumerated(&self) -> impl Iterator<Item = (Index<T>, &T)> {
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(i, value)| (Index::from_raw(i), value))
+        }
+        pub(crate) fn position<F>(&self, f: F) -> Option<Index<T>>
+        where
+            F: FnMut(&T) -> bool,
+        {
+            self.0.iter().position(f).map(Index::from_raw)
+        }
+    }
+
+    impl<T> ops::Index<Index<T>> for TypedList<T> {
+        type Output = T;
+
+        fn index(&self, index: Index<T>) -> &Self::Output {
+            &self.0[index.raw]
+        }
+    }
+
+    impl<T> ops::IndexMut<Index<T>> for TypedList<T> {
+        fn index_mut(&mut self, index: Index<T>) -> &mut Self::Output {
+            &mut self.0[index.raw]
+        }
+    }
+
+    impl<'list, T> IntoIterator for &'list TypedList<T> {
+        type Item = &'list T;
+        type IntoIter = slice::Iter<'list, T>;
+        fn into_iter(self) -> Self::IntoIter {
+            self.0.iter()
+        }
+    }
+
+    #[derive(Debug)]
+    pub(crate) struct Index<T> {
+        raw: usize,
+        phantom: PhantomData<fn() -> T>,
+    }
+
+    impl<T> Index<T> {
+        fn from_raw(raw: usize) -> Self {
+            Self {
+                raw,
+                phantom: PhantomData,
+            }
+        }
+    }
+
+    impl<T> Clone for Index<T> {
+        fn clone(&self) -> Self {
+            *self
+        }
+    }
+
+    impl<T> Copy for Index<T> {}
+
+    use core::slice;
+    use std::marker::PhantomData;
+    use std::ops;
+}
+
 use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
@@ -821,8 +859,8 @@ use crate::SymmetricKey;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rofi_bw_common::ipc;
-use rofi_bw_common::CipherList;
 use rofi_bw_common::CipherType;
+use rofi_bw_common::List;
 use rofi_bw_common::MasterKey;
 use rofi_mode::cairo;
 use std::borrow::Cow;

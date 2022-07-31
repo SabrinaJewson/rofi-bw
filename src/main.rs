@@ -66,6 +66,8 @@ enum Show {
     Cards,
     #[clap(alias = "identity")]
     Identities,
+    #[clap(alias = "folder")]
+    Folders,
 }
 
 fn try_main(args: Args) -> anyhow::Result<()> {
@@ -172,14 +174,15 @@ fn process_args(
                 ipc::View::Cipher(ipc::CipherFilter::Uuid(uuid.into_bytes()))
             }
             (None, Some(name), None) => ipc::View::Cipher(ipc::CipherFilter::Name(name)),
-            (None, None, Some(show)) => ipc::View::CipherList(match show {
-                Show::All => CipherList::All,
-                Show::Trash => CipherList::Trash,
-                Show::Favourites => CipherList::Favourites,
-                Show::Logins => CipherList::TypeBucket(CipherType::Login),
-                Show::SecureNotes => CipherList::TypeBucket(CipherType::SecureNote),
-                Show::Cards => CipherList::TypeBucket(CipherType::Card),
-                Show::Identities => CipherList::TypeBucket(CipherType::Identity),
+            (None, None, Some(show)) => ipc::View::List(match show {
+                Show::All => List::All,
+                Show::Trash => List::Trash,
+                Show::Favourites => List::Favourites,
+                Show::Logins => List::TypeBucket(CipherType::Login),
+                Show::SecureNotes => List::TypeBucket(CipherType::SecureNote),
+                Show::Cards => List::TypeBucket(CipherType::Card),
+                Show::Identities => List::TypeBucket(CipherType::Identity),
+                Show::Folders => List::Folders,
             }),
             (None, None, None) => ipc::View::default(),
             _ => unreachable!("args are mutually exclusive"),
@@ -579,9 +582,9 @@ use daemon::Daemon;
 use directories::ProjectDirs;
 use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
-use rofi_bw_common::CipherList;
 use rofi_bw_common::CipherType;
 use rofi_bw_common::Keybind;
+use rofi_bw_common::List;
 use std::convert::Infallible;
 use std::env;
 use std::ffi::OsString;

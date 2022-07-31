@@ -161,13 +161,13 @@ pub mod menu_request {
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub enum View {
-    CipherList(CipherList),
+    List(List),
     Cipher(CipherFilter),
 }
 
 impl Default for View {
     fn default() -> Self {
-        Self::CipherList(CipherList::All)
+        Self::List(List::All)
     }
 }
 
@@ -177,4 +177,4 @@ pub enum CipherFilter {
     Name(String),
 }
 
-use crate::CipherList;
+use crate::List;

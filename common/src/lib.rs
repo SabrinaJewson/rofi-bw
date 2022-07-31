@@ -108,7 +108,7 @@ pub use menu_keybinds::MENU_KEYBINDS;
 pub mod menu_keybinds {
     #[derive(Clone, Copy)]
     pub enum Action {
-        ShowList(CipherList),
+        ShowList(List),
         Sync,
         Lock,
         LogOut,
@@ -133,37 +133,42 @@ pub mod menu_keybinds {
         },
         Keybind {
             combination: "Alt+a",
-            action: Action::ShowList(CipherList::All),
+            action: Action::ShowList(List::All),
             description: "All",
         },
         Keybind {
             combination: "Alt+t",
-            action: Action::ShowList(CipherList::Trash),
+            action: Action::ShowList(List::Trash),
             description: "Trash",
         },
         Keybind {
             combination: "Alt+v",
-            action: Action::ShowList(CipherList::Favourites),
+            action: Action::ShowList(List::Favourites),
             description: "Favourites",
         },
         Keybind {
+            combination: "Alt+d",
+            action: Action::ShowList(List::Folders),
+            description: "Folders",
+        },
+        Keybind {
             combination: "Alt+l",
-            action: Action::ShowList(CipherList::TypeBucket(CipherType::Login)),
+            action: Action::ShowList(List::TypeBucket(CipherType::Login)),
             description: "Logins",
         },
         Keybind {
             combination: "Alt+n",
-            action: Action::ShowList(CipherList::TypeBucket(CipherType::SecureNote)),
+            action: Action::ShowList(List::TypeBucket(CipherType::SecureNote)),
             description: "Secure notes",
         },
         Keybind {
             combination: "Alt+c",
-            action: Action::ShowList(CipherList::TypeBucket(CipherType::Card)),
+            action: Action::ShowList(List::TypeBucket(CipherType::Card)),
             description: "Cards",
         },
         Keybind {
             combination: "Alt+i",
-            action: Action::ShowList(CipherList::TypeBucket(CipherType::Identity)),
+            action: Action::ShowList(List::TypeBucket(CipherType::Identity)),
             description: "Identities",
         },
     ];
@@ -174,34 +179,35 @@ pub mod menu_keybinds {
         &MENU_KEYBINDS[0..3]
     }
 
-    /// Keybinds that select a category (all, trash) to be shown.
+    /// Keybinds that select a category (e.g. all, trash) to be shown.
     #[must_use]
     pub fn categories() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[3..6]
+        &MENU_KEYBINDS[3..7]
     }
 
     /// Keybinds that select a specific type bucket to be shown.
     #[must_use]
     pub fn type_buckets() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[6..]
+        &MENU_KEYBINDS[7..]
     }
 
-    use crate::CipherList;
     use crate::CipherType;
     use crate::Keybind;
+    use crate::List;
 }
 
-pub use cipher_list::CipherList;
-mod cipher_list {
+pub use list::List;
+mod list {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
-    pub enum CipherList {
+    pub enum List {
         All,
         Trash,
         Favourites,
         TypeBucket(CipherType),
+        Folders,
     }
 
-    impl CipherList {
+    impl List {
         #[must_use]
         pub const fn description(self) -> &'static str {
             match self {
@@ -212,6 +218,7 @@ mod cipher_list {
                 Self::TypeBucket(CipherType::SecureNote) => "Secure notes",
                 Self::TypeBucket(CipherType::Card) => "Cards",
                 Self::TypeBucket(CipherType::Identity) => "Identities",
+                Self::Folders => "Folders",
             }
         }
     }

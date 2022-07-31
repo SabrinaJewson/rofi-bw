@@ -29,7 +29,7 @@ pub(crate) struct Profile {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Folder {
     pub(crate) id: Uuid,
-    pub(crate) name: Option<CipherString<String>>,
+    pub(crate) name: CipherString<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub(crate) revision_date: OffsetDateTime,
 }

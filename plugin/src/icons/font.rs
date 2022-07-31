@@ -124,6 +124,8 @@ pub(crate) enum Glyph {
     Card,
     Identity,
 
+    Folder,
+
     Briefcase,
     Chain,
     Clock,
@@ -141,7 +143,7 @@ pub(crate) enum Glyph {
 }
 
 impl Glyph {
-    const COUNT: usize = 18;
+    const COUNT: usize = 19;
 
     fn to_char(self) -> u16 {
         // See:
@@ -151,6 +153,8 @@ impl Glyph {
             Self::SecureNote => 0xE90A,
             Self::Card => 0xE908,
             Self::Identity => 0xE907,
+
+            Self::Folder => 0xE90B,
 
             Self::Briefcase => 0xE98C,
             Self::Chain => 0xE954,
