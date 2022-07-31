@@ -91,7 +91,9 @@ impl Inner {
 
         context.set_font_face(&self.cairo_face);
         context.set_source_rgb(0.7, 0.7, 0.7);
-        context.set_font_size(f64::from(height));
+        // Setting the full height can cause a bit of clipping on some of the icons (I especially
+        // noticed this on the key one), so it’s more reliable to make it slightly smaller.
+        context.set_font_size(f64::from(height) * 0.95);
 
         let mut glyphs = [cairo::Glyph {
             index: u64::from(index),
