@@ -68,6 +68,18 @@ impl Initialized {
         self.state.view = View::List(list);
     }
 
+    pub(crate) fn parent(&mut self) {
+        self.state.view = match self.state.view {
+            View::List(List::Trash) => View::List(List::Trash),
+            View::List(List::All | List::Favourites | List::TypeBucket(_)) => View::List(List::All),
+            View::List(List::Folders) | View::Folder(_) => View::List(List::Folders),
+            View::Cipher(i) => {
+                let folder_id = self.state.ciphers[i].folder_id;
+                View::Folder(self.state.folder_map[&folder_id])
+            }
+        };
+    }
+
     pub(crate) fn ok_alt(&mut self, line: usize, input: &mut rofi_mode::String) {
         match self.state.viewing() {
             Viewing::CipherList(list) => {
@@ -167,6 +179,7 @@ struct State {
     favourites: Vec<typed_slice::Index<Cipher>>,
     type_buckets: CipherTypeList<Vec<typed_slice::Index<Cipher>>>,
     folders: Box<TypedSlice<Folder>>,
+    folder_map: HashMap<Option<Uuid>, typed_slice::Index<Folder>>,
 }
 
 #[derive(Clone, Copy)]
@@ -197,10 +210,10 @@ impl State {
 
         let mut folders = TypedSlice::from_boxed_slice(folders.into_boxed_slice());
 
-        let mut folders_map = folders
-            .iter_mut()
-            .map(|folder| (folder.id, folder))
-            .collect::<HashMap<Option<Uuid>, &mut Folder>>();
+        let folder_map = folders
+            .enumerated()
+            .map(|(i, folder)| (folder.id, i))
+            .collect::<HashMap<Option<Uuid>, typed_slice::Index<Folder>>>();
 
         let mut ciphers = (0..data.ciphers.len())
             .map(|_| Cipher::safe_uninit())
@@ -236,10 +249,10 @@ impl State {
 
             type_buckets[cipher.r#type].push(i);
 
-            let folder = folders_map.get_mut(&cipher.folder_id).with_context(|| {
+            let &folder = folder_map.get(&cipher.folder_id).with_context(|| {
                 format!("Item {} is contained in non-existent folder", cipher.name)
             })?;
-            folder.contents.push(i);
+            folders[folder].contents.push(i);
         }
 
         Ok(Self {
@@ -275,6 +288,7 @@ impl State {
             favourites,
             type_buckets,
             folders,
+            folder_map,
         })
     }
 

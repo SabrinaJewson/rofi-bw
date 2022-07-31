@@ -109,6 +109,7 @@ pub mod menu_keybinds {
     #[derive(Clone, Copy)]
     pub enum Action {
         ShowList(List),
+        Parent,
         Sync,
         Lock,
         LogOut,
@@ -151,7 +152,11 @@ pub mod menu_keybinds {
             action: Action::ShowList(List::Folders),
             description: "Folders",
         },
-        // TODO: “Parent folder” keybind
+        Keybind {
+            combination: "Alt+p",
+            action: Action::Parent,
+            description: "Parent",
+        },
         Keybind {
             combination: "Alt+l",
             action: Action::ShowList(List::TypeBucket(CipherType::Login)),
@@ -183,13 +188,13 @@ pub mod menu_keybinds {
     /// Keybinds that select a category (e.g. all, trash) to be shown.
     #[must_use]
     pub fn categories() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[3..7]
+        &MENU_KEYBINDS[3..8]
     }
 
     /// Keybinds that select a specific type bucket to be shown.
     #[must_use]
     pub fn type_buckets() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[7..]
+        &MENU_KEYBINDS[8..]
     }
 
     use crate::CipherType;

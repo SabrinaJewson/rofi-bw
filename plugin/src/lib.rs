@@ -147,6 +147,12 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                         }
                         return rofi_mode::Action::Reload;
                     }
+                    menu_keybinds::Action::Parent => {
+                        if let Some(initialized) = self.initialized_mut() {
+                            initialized.parent();
+                        }
+                        return rofi_mode::Action::Reload;
+                    }
                     menu_keybinds::Action::Sync => ipc::MenuRequest::Sync {
                         menu_state: ipc::menu_request::MenuState {
                             filter: input.to_string(),
