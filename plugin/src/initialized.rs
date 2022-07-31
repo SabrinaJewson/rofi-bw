@@ -106,8 +106,8 @@ impl Initialized {
                     .icon
                     .as_ref()
                     .and_then(|icon| self.icons.fs_path(icon))
-                    .and_then(fs::Path::to_str)
-                    .map(str::to_owned);
+                    .and_then(|path| std::fs::canonicalize(path).ok())
+                    .and_then(|path| path.into_os_string().into_string().ok());
 
                 Some(ipc::MenuRequest::Copy {
                     cipher_name,
@@ -799,7 +799,6 @@ use crate::Icons;
 use crate::SymmetricKey;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
-use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::CipherList;
 use rofi_bw_common::CipherType;
