@@ -1,7 +1,6 @@
 pub(crate) struct Bitwarden {
     icons: HashMap<Arc<str>, Icon>,
     disk_cache: Arc<DiskCache<fs::PathBuf>>,
-    runtime: tokio::runtime::Runtime,
     http: reqwest::Client,
 }
 
@@ -12,7 +11,6 @@ impl Bitwarden {
     fn new_inner() -> anyhow::Result<Self> {
         let dirs = ProjectDirs::from("", "", "rofi-bw").context("no home directory")?;
         let disk_cache = DiskCache::new(dirs.cache_dir().join("icon-cache"));
-        let runtime = tokio::runtime::Runtime::new().context("failed to start Tokio runtime")?;
         let http = reqwest::Client::builder()
             .build()
             .context("failed to initialize HTTP client")?;
@@ -20,7 +18,6 @@ impl Bitwarden {
         Ok(Self {
             icons: HashMap::new(),
             disk_cache: Arc::new(disk_cache),
-            runtime,
             http,
         })
     }
@@ -30,7 +27,7 @@ impl Bitwarden {
             return;
         }
 
-        let handle = self.runtime.spawn_blocking({
+        let handle = tokio::task::spawn_blocking({
             let disk_cache = self.disk_cache.clone();
             let host = host.clone();
             let http = self.http.clone();
