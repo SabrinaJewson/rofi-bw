@@ -1503,6 +1503,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "image",
+ "memchr",
  "rand",
  "rayon",
  "reqwest",

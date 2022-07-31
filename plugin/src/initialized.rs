@@ -339,14 +339,19 @@ fn process_card(
     key: &SymmetricKey,
     fields: &mut Vec<Field>,
 ) -> anyhow::Result<Option<Icon>> {
-    // TODO: Card icons
+    // TODO: Fallback card icon
+    let mut icon = None;
 
     if let Some(cardholder_name) = card.cardholder_name {
         fields.push(Field::cardholder_name(cardholder_name.decrypt(key)?));
     }
 
     if let Some(brand) = card.brand {
-        fields.push(Field::card_brand(brand.decrypt(key)?));
+        let brand = brand.decrypt(key)?;
+
+        icon = icons::Resource::card_icon(&*brand).map(Icon::Resource);
+
+        fields.push(Field::card_brand(brand));
     }
 
     if let Some(number) = card.number {
@@ -364,7 +369,7 @@ fn process_card(
         fields.push(Field::card_code(code.decrypt(key)?));
     }
 
-    Ok(None)
+    Ok(icon)
 }
 
 fn process_identity(
@@ -787,10 +792,11 @@ enum Action {
 use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
-use crate::parallel_try_fill::parallel_try_fill;
-use crate::symmetric_key::SymmetricKey;
+use crate::icons;
+use crate::parallel_try_fill;
 use crate::Icon;
 use crate::Icons;
+use crate::SymmetricKey;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rofi_bw_common::fs;

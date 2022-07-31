@@ -284,11 +284,20 @@ mod symmetric_key;
 use base64_decode_array::base64_decode_array;
 mod base64_decode_array;
 
+use disk_cache::DiskCache;
 mod disk_cache;
 
+use parallel_try_fill::parallel_try_fill;
 mod parallel_try_fill;
 
+use cairo_image_data::CairoImageData;
 mod cairo_image_data;
+
+use poll_future_once::poll_future_once;
+mod poll_future_once;
+
+use sync_wrapper::SyncWrapper;
+mod sync_wrapper;
 
 use anyhow::Context as _;
 use rofi_bw_common::ipc;

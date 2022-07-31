@@ -1,3 +1,5 @@
+//! Per-website icons downloaded and cached from icons.bitwarden.net.
+
 pub(crate) struct Bitwarden {
     icons: HashMap<Arc<str>, Icon>,
     disk_cache: Arc<DiskCache<fs::PathBuf>>,
@@ -189,57 +191,10 @@ mod download_icon {
     use time::OffsetDateTime;
 }
 
-pub(crate) use sync_wrapper::SyncWrapper;
-mod sync_wrapper {
-    pub(crate) struct SyncWrapper<T>(T);
-
-    impl<T> SyncWrapper<T> {
-        pub(crate) const fn new(value: T) -> Self {
-            Self(value)
-        }
-
-        pub(crate) fn get_mut(&mut self) -> &mut T {
-            &mut self.0
-        }
-    }
-
-    unsafe impl<T> Sync for SyncWrapper<T> {}
-}
-
-use poll_future_once::poll_future_once;
-mod poll_future_once {
-    pub(crate) fn poll_future_once<F: Future>(future: F) -> Option<F::Output> {
-        pin!(future);
-        let waker = NOOP_WAKER;
-        let cx = &mut task::Context::from_waker(&waker);
-        match future.poll(cx) {
-            Poll::Ready(val) => Some(val),
-            Poll::Pending => None,
-        }
-    }
-
-    use super::NOOP_WAKER;
-    use std::future::Future;
-    use std::task;
-    use std::task::Poll;
-    use tokio::pin;
-}
-
-use noop_waker::NOOP_WAKER;
-mod noop_waker {
-    pub(crate) const NOOP_WAKER: Waker = unsafe { mem::transmute(RAW) };
-    const RAW: RawWaker = RawWaker::new(ptr::null(), &VTABLE);
-    const VTABLE: RawWakerVTable = RawWakerVTable::new(|_| RAW, |_| {}, |_| {}, |_| {});
-
-    use std::mem;
-    use std::ptr;
-    use std::task::RawWaker;
-    use std::task::RawWakerVTable;
-    use std::task::Waker;
-}
-
-use crate::cairo_image_data::CairoImageData;
-use crate::disk_cache::DiskCache;
+use crate::poll_future_once;
+use crate::CairoImageData;
+use crate::DiskCache;
+use crate::SyncWrapper;
 use anyhow::Context as _;
 use directories::ProjectDirs;
 use rofi_bw_common::fs;

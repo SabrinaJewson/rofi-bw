@@ -27,6 +27,7 @@ base64 = { version = "0.13.0", features = ["std"] }
 bytes = "1.2.0"
 directories = "4.0.1"
 image = { version = "0.24.3", default-features = false, features = ["ico", "jpeg_rayon", "png", "tiff", "webp", "jpeg"] }
+memchr = "2.5.0"
 rand = { version = "0.8.5", features = ["std"] }
 rayon = "1.5.3"
 reqwest = { version = "0.11.11", default-features = false, features = ["rustls-tls-webpki-roots", "gzip"] }
