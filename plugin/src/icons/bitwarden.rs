@@ -1,13 +1,13 @@
-pub(crate) struct BwIcons {
+pub(crate) struct Bitwarden {
     icons: HashMap<Arc<str>, Icon>,
     disk_cache: Arc<DiskCache<fs::PathBuf>>,
     runtime: tokio::runtime::Runtime,
     http: reqwest::Client,
 }
 
-impl BwIcons {
-    pub fn new() -> anyhow::Result<Self> {
-        Self::new_inner().context("failed to initialize icons loader")
+impl Bitwarden {
+    pub(crate) fn new() -> anyhow::Result<Self> {
+        Self::new_inner().context("failed to initialize Bitwarden icons loader")
     }
     fn new_inner() -> anyhow::Result<Self> {
         let dirs = ProjectDirs::from("", "", "rofi-bw").context("no home directory")?;
@@ -25,7 +25,7 @@ impl BwIcons {
         })
     }
 
-    pub fn start_fetch(&mut self, host: Arc<str>) {
+    pub(crate) fn start_fetch(&mut self, host: Arc<str>) {
         if self.icons.contains_key(&*host) {
             return;
         }
@@ -83,12 +83,12 @@ impl BwIcons {
         self.icons.insert(host, Icon::Waiting(handle));
     }
 
-    pub fn surface(&mut self, host: &str) -> Option<cairo::Surface> {
+    pub(crate) fn surface(&mut self, host: &str) -> Option<cairo::Surface> {
         let icon = self.get(host)?;
         Some((**icon.surface.get_mut()).clone())
     }
 
-    pub fn fs_path(&mut self, host: &str) -> Option<&fs::Path> {
+    pub(crate) fn fs_path(&mut self, host: &str) -> Option<&fs::Path> {
         let icon = self.get(host)?;
         Some(&*icon.path)
     }
@@ -141,7 +141,7 @@ struct LoadedIcon {
     surface: SyncWrapper<cairo::ImageSurface>,
 }
 
-pub(crate) use download_icon::download_icon;
+use download_icon::download_icon;
 mod download_icon {
     pub(crate) struct Downloaded {
         pub(crate) bytes: Bytes,

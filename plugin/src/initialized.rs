@@ -1,20 +1,19 @@
 pub(crate) struct Initialized {
     state: State,
-    icons: BwIcons,
+    icons: Icons,
     // Currently unused, but may be useful in future
     error_message: String,
 }
 
 impl Initialized {
     pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
-        let mut icons = BwIcons::new()?;
+        let mut icons = Icons::new()?;
 
         let state = State::new(master_key, data, view)?;
 
         for cipher in &state.ciphers {
-            match &cipher.icon {
-                Some(Icon::Host(host)) => icons.start_fetch(host.clone()),
-                None => {}
+            if let Some(icon) = &cipher.icon {
+                icons.start_fetch(icon.clone());
             }
         }
 
@@ -55,9 +54,8 @@ impl Initialized {
     pub(crate) fn entry_icon(&mut self, line: usize) -> Option<cairo::Surface> {
         match self.state.viewing() {
             Viewing::CipherList(list) => {
-                match self.state.ciphers[list.contents[line]].icon.as_ref()? {
-                    Icon::Host(host) => self.icons.surface(host),
-                }
+                let icon = self.state.ciphers[list.contents[line]].icon.as_ref()?;
+                self.icons.surface(icon)
             }
             Viewing::Cipher(_) => None,
         }
@@ -104,14 +102,12 @@ impl Initialized {
                 let cipher_name = cipher.name.clone();
                 let reprompt = *hidden && cipher.reprompt;
 
-                let image_path = match &cipher.icon {
-                    Some(Icon::Host(host)) => self
-                        .icons
-                        .fs_path(host)
-                        .and_then(fs::Path::to_str)
-                        .map(str::to_owned),
-                    None => None,
-                };
+                let image_path = cipher
+                    .icon
+                    .as_ref()
+                    .and_then(|icon| self.icons.fs_path(icon))
+                    .and_then(fs::Path::to_str)
+                    .map(str::to_owned);
 
                 Some(ipc::MenuRequest::Copy {
                     cipher_name,
@@ -788,16 +784,13 @@ enum Action {
     },
 }
 
-enum Icon {
-    Host(Arc<str>),
-}
-
 use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
 use crate::parallel_try_fill::parallel_try_fill;
 use crate::symmetric_key::SymmetricKey;
-use crate::BwIcons;
+use crate::Icon;
+use crate::Icons;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rofi_bw_common::fs;

@@ -269,8 +269,9 @@ mod error_status {
 use initialized::Initialized;
 mod initialized;
 
-use bw_icons::BwIcons;
-mod bw_icons;
+use icons::Icon;
+use icons::Icons;
+mod icons;
 
 mod data;
 
