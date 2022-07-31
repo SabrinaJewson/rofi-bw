@@ -11,7 +11,7 @@ impl Initialized {
 
         let state = State::new(master_key, data, view)?;
 
-        for cipher in &state.ciphers {
+        for cipher in &*state.ciphers {
             icons.start_fetch(&cipher.icon);
         }
 
@@ -29,6 +29,7 @@ impl Initialized {
     pub(crate) fn status(&self, s: &mut rofi_mode::String) {
         s.push_str(match self.state.view {
             View::List(list) => list.description(),
+            View::Folder(i) => &*self.state.folders[i].name,
             View::Cipher(i) => &*self.state.ciphers[i].name,
         });
         s.push_str("\n");
@@ -49,7 +50,7 @@ impl Initialized {
     pub(crate) fn entry_content(&self, line: usize) -> &str {
         match self.state.viewing() {
             Viewing::CipherList(list) => &*self.state.ciphers[list[line]].name,
-            Viewing::Folders(folders) => &*folders[line].name,
+            Viewing::Folders(folders) => &*folders[typed_slice::Index::from_raw(line)].name,
             Viewing::Cipher(cipher) => &*cipher.fields[line].display,
         }
     }
@@ -73,8 +74,11 @@ impl Initialized {
                 input.clear();
                 self.state.view = View::Cipher(list[line]);
             }
-            // TODO: Open the folder
-            Viewing::Folders(_) | Viewing::Cipher(_) => {}
+            Viewing::Folders(_) => {
+                input.clear();
+                self.state.view = View::Folder(typed_slice::Index::from_raw(line));
+            }
+            Viewing::Cipher(_) => {}
         }
     }
 
@@ -95,8 +99,11 @@ impl Initialized {
                     }
                 }
             }
-            // TODO: open the folder
-            Viewing::Folders(_) => return None,
+            Viewing::Folders(_) => {
+                input.clear();
+                self.state.view = View::Folder(typed_slice::Index::from_raw(line));
+                return None;
+            }
             Viewing::Cipher(cipher) => (cipher, line),
         };
 
@@ -136,9 +143,17 @@ impl Initialized {
     pub(crate) fn ipc_view(&self) -> ipc::View {
         match self.state.view {
             View::List(list) => ipc::View::List(list),
+            View::Folder(i) => {
+                let uuid = self.state.folders[i].id;
+                if let Some(uuid) = uuid {
+                    ipc::View::Folder(ipc::Filter::Uuid(uuid.into_bytes()))
+                } else {
+                    ipc::View::NoFolder
+                }
+            }
             View::Cipher(i) => {
                 let uuid = self.state.ciphers[i].id;
-                ipc::View::Cipher(ipc::CipherFilter::Uuid(uuid.into_bytes()))
+                ipc::View::Cipher(ipc::Filter::Uuid(uuid.into_bytes()))
             }
         }
     }
@@ -146,24 +161,46 @@ impl Initialized {
 
 struct State {
     view: View,
-    ciphers: TypedList<Cipher>,
-    all: Vec<typed_list::Index<Cipher>>,
-    trash: Vec<typed_list::Index<Cipher>>,
-    favourites: Vec<typed_list::Index<Cipher>>,
-    type_buckets: CipherTypeList<Vec<typed_list::Index<Cipher>>>,
-    folders: Vec<Folder>,
+    ciphers: Box<TypedSlice<Cipher>>,
+    all: Vec<typed_slice::Index<Cipher>>,
+    trash: Vec<typed_slice::Index<Cipher>>,
+    favourites: Vec<typed_slice::Index<Cipher>>,
+    type_buckets: CipherTypeList<Vec<typed_slice::Index<Cipher>>>,
+    folders: Box<TypedSlice<Folder>>,
 }
 
 #[derive(Clone, Copy)]
 enum View {
     List(List),
-    Cipher(typed_list::Index<Cipher>),
-    // TODO: folder view
+    Folder(typed_slice::Index<Folder>),
+    Cipher(typed_slice::Index<Cipher>),
 }
 
 impl State {
     pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
         let key = data.profile.key.decrypt(master_key)?;
+
+        let mut folders = Vec::with_capacity(data.folders.len() + 1);
+
+        for folder in data.folders {
+            folders.push(process_folder(folder, &key)?);
+        }
+
+        // TODO: Use a proper Unicode sort
+        folders.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+
+        folders.push(Folder {
+            id: None,
+            name: "No folder".to_owned(),
+            contents: Vec::new(),
+        });
+
+        let mut folders = TypedSlice::from_boxed_slice(folders.into_boxed_slice());
+
+        let mut folders_map = folders
+            .iter_mut()
+            .map(|folder| (folder.id, folder))
+            .collect::<HashMap<Option<Uuid>, &mut Folder>>();
 
         let mut ciphers = (0..data.ciphers.len())
             .map(|_| Cipher::safe_uninit())
@@ -179,7 +216,7 @@ impl State {
         // TODO: Use a proper Unicode sort
         ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
-        let ciphers = TypedList::from_boxed_slice(ciphers);
+        let ciphers = TypedSlice::from_boxed_slice(ciphers);
 
         let mut all = Vec::new();
         let mut trash = Vec::new();
@@ -188,37 +225,45 @@ impl State {
         for (i, cipher) in ciphers.enumerated() {
             if cipher.deleted {
                 trash.push(i);
-            } else {
-                if cipher.favourite {
-                    favourites.push(i);
-                }
-                all.push(i);
+                continue;
             }
 
+            if cipher.favourite {
+                favourites.push(i);
+            }
+
+            all.push(i);
+
             type_buckets[cipher.r#type].push(i);
+
+            let folder = folders_map.get_mut(&cipher.folder_id).with_context(|| {
+                format!("Item {} is contained in non-existent folder", cipher.name)
+            })?;
+            folder.contents.push(i);
         }
-
-        let mut folders = data
-            .folders
-            .into_iter()
-            .map(|folder| process_folder(folder, &key))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        // TODO: Use a proper Unicode sort
-        folders.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
         Ok(Self {
             view: match view {
                 ipc::View::List(list) => View::List(list),
+                ipc::View::NoFolder => View::Folder(folders.last_index()),
+                ipc::View::Folder(filter) => {
+                    let index = match filter {
+                        ipc::Filter::Uuid(uuid) => {
+                            let uuid = Uuid::from_bytes(uuid);
+                            folders.position(|folder| folder.id == Some(uuid))
+                        }
+                        ipc::Filter::Name(name) => folders.position(|folder| folder.name == name),
+                    };
+
+                    index.map_or(View::List(List::All), View::Folder)
+                }
                 ipc::View::Cipher(filter) => {
                     let index = match filter {
-                        ipc::CipherFilter::Uuid(uuid) => {
+                        ipc::Filter::Uuid(uuid) => {
                             let uuid = Uuid::from_bytes(uuid);
                             ciphers.position(|cipher| cipher.id == uuid)
                         }
-                        ipc::CipherFilter::Name(name) => {
-                            ciphers.position(|cipher| cipher.name == name)
-                        }
+                        ipc::Filter::Name(name) => ciphers.position(|cipher| cipher.name == name),
                     };
 
                     index.map_or(View::List(List::All), View::Cipher)
@@ -244,27 +289,31 @@ impl State {
                 }
                 List::Folders => Viewing::Folders(&*self.folders),
             },
+            View::Folder(i) => Viewing::CipherList(&*self.folders[i].contents),
             View::Cipher(i) => Viewing::Cipher(&self.ciphers[i]),
         }
     }
 }
 
 enum Viewing<'a> {
-    CipherList(&'a [typed_list::Index<Cipher>]),
-    Folders(&'a [Folder]),
+    CipherList(&'a [typed_slice::Index<Cipher>]),
+    Folders(&'a TypedSlice<Folder>),
     Cipher(&'a Cipher),
 }
 
 fn process_folder(folder: data::Folder, key: &SymmetricKey) -> anyhow::Result<Folder> {
     Ok(Folder {
-        id: folder.id,
+        id: Some(folder.id),
         name: folder.name.decrypt(key)?,
+        contents: Vec::new(),
     })
 }
 
 struct Folder {
-    id: Uuid,
+    /// None for the “No folder” folder
+    id: Option<Uuid>,
     name: String,
+    contents: Vec<typed_slice::Index<Cipher>>,
 }
 
 fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Cipher> {
@@ -322,6 +371,7 @@ fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Ci
 
     Ok(Cipher {
         id: cipher.id,
+        folder_id: cipher.folder_id,
         r#type,
         deleted: cipher.deleted_date.is_some(),
         favourite: cipher.favourite,
@@ -502,6 +552,7 @@ mod cipher_type_list {
 
 struct Cipher {
     id: Uuid,
+    folder_id: Option<Uuid>,
     /// Used to sort ciphers into type buckets.
     r#type: CipherType,
     deleted: bool,
@@ -517,6 +568,7 @@ impl Cipher {
     const fn safe_uninit() -> Self {
         Self {
             id: Uuid::nil(),
+            folder_id: None,
             r#type: CipherType::Login,
             deleted: false,
             favourite: false,
@@ -775,14 +827,26 @@ enum Action {
     },
 }
 
-use typed_list::TypedList;
-/// Newtype over a `Box<[T]>` featuring `T`-dependent index types.
-mod typed_list {
-    pub(super) struct TypedList<T>(Box<[T]>);
+use typed_slice::TypedSlice;
+/// Newtype over a `[T]` featuring `T`-dependent index types.
+mod typed_slice {
+    #[repr(transparent)]
+    pub(super) struct TypedSlice<T>([T]);
 
-    impl<T> TypedList<T> {
-        pub(super) const fn from_boxed_slice(slice: Box<[T]>) -> Self {
-            Self(slice)
+    impl<T> TypedSlice<T> {
+        pub(super) fn from_boxed_slice(slice: Box<[T]>) -> Box<Self> {
+            let ptr = Box::into_raw(slice);
+            let ptr = ptr as *mut Self;
+            unsafe { Box::from_raw(ptr) }
+        }
+        pub(crate) const fn len(&self) -> usize {
+            self.0.len()
+        }
+        pub(crate) fn iter(&self) -> slice::Iter<'_, T> {
+            self.0.iter()
+        }
+        pub(crate) fn iter_mut(&mut self) -> slice::IterMut<'_, T> {
+            self.0.iter_mut()
         }
         pub(crate) fn enumerated(&self) -> impl Iterator<Item = (Index<T>, &T)> {
             self.0
@@ -796,9 +860,12 @@ mod typed_list {
         {
             self.0.iter().position(f).map(Index::from_raw)
         }
+        pub(crate) fn last_index(&self) -> Index<T> {
+            Index::from_raw(self.0.len() - 1)
+        }
     }
 
-    impl<T> ops::Index<Index<T>> for TypedList<T> {
+    impl<T> ops::Index<Index<T>> for TypedSlice<T> {
         type Output = T;
 
         fn index(&self, index: Index<T>) -> &Self::Output {
@@ -806,17 +873,25 @@ mod typed_list {
         }
     }
 
-    impl<T> ops::IndexMut<Index<T>> for TypedList<T> {
+    impl<T> ops::IndexMut<Index<T>> for TypedSlice<T> {
         fn index_mut(&mut self, index: Index<T>) -> &mut Self::Output {
             &mut self.0[index.raw]
         }
     }
 
-    impl<'list, T> IntoIterator for &'list TypedList<T> {
+    impl<'list, T> IntoIterator for &'list TypedSlice<T> {
         type Item = &'list T;
         type IntoIter = slice::Iter<'list, T>;
         fn into_iter(self) -> Self::IntoIter {
-            self.0.iter()
+            self.iter()
+        }
+    }
+
+    impl<'list, T> IntoIterator for &'list mut TypedSlice<T> {
+        type Item = &'list mut T;
+        type IntoIter = slice::IterMut<'list, T>;
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter_mut()
         }
     }
 
@@ -827,7 +902,7 @@ mod typed_list {
     }
 
     impl<T> Index<T> {
-        fn from_raw(raw: usize) -> Self {
+        pub(crate) fn from_raw(raw: usize) -> Self {
             Self {
                 raw,
                 phantom: PhantomData,
@@ -856,6 +931,7 @@ use crate::parallel_try_fill;
 use crate::Icon;
 use crate::Icons;
 use crate::SymmetricKey;
+use anyhow::Context as _;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rofi_bw_common::ipc;
@@ -864,6 +940,7 @@ use rofi_bw_common::List;
 use rofi_bw_common::MasterKey;
 use rofi_mode::cairo;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;

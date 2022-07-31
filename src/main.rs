@@ -26,19 +26,29 @@ fn main() -> process::ExitCode {
 
 /// Rofi interface to Bitwarden.
 #[derive(clap::Parser)]
+#[clap(group = clap::ArgGroup::new("view").args(&[
+    "cipher-uuid", "cipher-name", "folder-uuid", "folder-name", "show"
+]))]
 struct Args {
     /// The initial filter to use in Rofi.
     #[clap(short, long, default_value = "")]
     filter: String,
 
-    /// The UUID of the cipher that rofi-bw will open showing;
-    /// mutually exclusive with `--cipher-name` and `--show`.
-    #[clap(long, conflicts_with = "cipher-name", conflicts_with = "show")]
+    /// The UUID of the cipher that rofi-bw will open showing.
+    #[clap(long)]
     cipher_uuid: Option<Uuid>,
 
     /// The name of the cipher that rofi-bw will open showing (must be an exact match).
-    #[clap(long, conflicts_with = "show")]
+    #[clap(long)]
     cipher_name: Option<String>,
+
+    /// The UUID of the folder that rofi-bw will open showing.
+    #[clap(long)]
+    folder_uuid: Option<Uuid>,
+
+    /// The name of the folder that rofi-bw will open showing (must be an exact match).
+    #[clap(long)]
+    folder_name: Option<String>,
 
     /// Which cipher list rofi-bw will open showing; mutually exclusive with `--cipher-uuid`.
     #[clap(long, value_enum)]
@@ -160,6 +170,8 @@ fn process_args(
         filter,
         cipher_uuid,
         cipher_name,
+        folder_uuid,
+        folder_name,
         show,
         config_file,
     }: Args,
@@ -169,12 +181,16 @@ fn process_args(
     let request = daemon::ShowMenu {
         display,
         filter,
-        view: match (cipher_uuid, cipher_name, show) {
-            (Some(uuid), None, None) => {
-                ipc::View::Cipher(ipc::CipherFilter::Uuid(uuid.into_bytes()))
+        view: match (cipher_uuid, cipher_name, folder_uuid, folder_name, show) {
+            (Some(uuid), None, None, None, None) => {
+                ipc::View::Cipher(ipc::Filter::Uuid(uuid.into_bytes()))
             }
-            (None, Some(name), None) => ipc::View::Cipher(ipc::CipherFilter::Name(name)),
-            (None, None, Some(show)) => ipc::View::List(match show {
+            (None, Some(name), None, None, None) => ipc::View::Cipher(ipc::Filter::Name(name)),
+            (None, None, Some(uuid), None, None) => {
+                ipc::View::Folder(ipc::Filter::Uuid(uuid.into_bytes()))
+            }
+            (None, None, None, Some(name), None) => ipc::View::Folder(ipc::Filter::Name(name)),
+            (None, None, None, None, Some(show)) => ipc::View::List(match show {
                 Show::All => List::All,
                 Show::Trash => List::Trash,
                 Show::Favourites => List::Favourites,
@@ -184,7 +200,7 @@ fn process_args(
                 Show::Identities => List::TypeBucket(CipherType::Identity),
                 Show::Folders => List::Folders,
             }),
-            (None, None, None) => ipc::View::default(),
+            (None, None, None, None, None) => ipc::View::default(),
             _ => unreachable!("args are mutually exclusive"),
         },
     };

@@ -151,6 +151,7 @@ pub mod menu_keybinds {
             action: Action::ShowList(List::Folders),
             description: "Folders",
         },
+        // TODO: “Parent folder” keybind
         Keybind {
             combination: "Alt+l",
             action: Action::ShowList(List::TypeBucket(CipherType::Login)),

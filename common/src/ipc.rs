@@ -162,7 +162,9 @@ pub mod menu_request {
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub enum View {
     List(List),
-    Cipher(CipherFilter),
+    NoFolder,
+    Folder(Filter),
+    Cipher(Filter),
 }
 
 impl Default for View {
@@ -172,7 +174,7 @@ impl Default for View {
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
-pub enum CipherFilter {
+pub enum Filter {
     Uuid([u8; 16]),
     Name(String),
 }
