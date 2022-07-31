@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname $0)"
 
 mkdir -p /usr/local/share/rofi-bw
-cp "resources/*" /usr/local/share/rofi-bw
+cp resources/*.png /usr/local/share/rofi-bw
 
 mkdir -p /usr/local/lib/rofi-bw
 cp build/lib/plugin.so /usr/local/lib/rofi-bw/plugin.so

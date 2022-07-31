@@ -52,13 +52,11 @@ impl Initialized {
     }
 
     pub(crate) fn entry_icon(&mut self, line: usize) -> Option<cairo::Surface> {
-        match self.state.viewing() {
-            Viewing::CipherList(list) => {
-                let icon = self.state.ciphers[list.contents[line]].icon.as_ref()?;
-                self.icons.surface(icon)
-            }
-            Viewing::Cipher(_) => None,
-        }
+        let icon = match self.state.viewing() {
+            Viewing::CipherList(list) => &self.state.ciphers[list.contents[line]].icon,
+            Viewing::Cipher(cipher) => &cipher.fields[line].icon,
+        };
+        self.icons.surface(icon.as_ref()?)
     }
 
     pub(crate) fn show(&mut self, list: CipherList) {
@@ -348,9 +346,7 @@ fn process_card(
 
     if let Some(brand) = card.brand {
         let brand = brand.decrypt(key)?;
-
-        icon = icons::Resource::card_icon(&*brand).map(Icon::Resource);
-
+        icon = Icon::card(&*brand);
         fields.push(Field::card_brand(brand));
     }
 
@@ -572,6 +568,7 @@ impl Cipher {
 
 struct Field {
     display: Cow<'static, str>,
+    icon: Option<Icon>,
     action: Option<Action>,
 }
 
@@ -589,7 +586,8 @@ impl Field {
         Self::shown("Cardholder name", "cardholder name", name)
     }
     fn card_brand(brand: String) -> Self {
-        Self::shown("Brand", "brand", brand)
+        let icon = Icon::card(&*brand);
+        Self::shown("Brand", "brand", brand).icon(icon)
     }
     fn card_number(number: String) -> Self {
         Self::hidden("Number", "number", number)
@@ -686,6 +684,7 @@ impl Field {
             } else {
                 Cow::Borrowed("Address")
             },
+            icon: None,
             action: Some(Action::Copy {
                 name: Cow::Borrowed("address"),
                 data,
@@ -697,6 +696,7 @@ impl Field {
         Self {
             // TODO: Note preview
             display: Cow::Borrowed("Notes"),
+            icon: None,
             action: Some(Action::Copy {
                 name: Cow::Borrowed("note"),
                 data: notes,
@@ -744,12 +744,17 @@ impl Field {
             FieldValue::Linked(to) => Some(Action::Link { to: to.as_str() }),
         };
 
-        Self { display, action }
+        Self {
+            display,
+            icon: None,
+            action,
+        }
     }
 
     fn shown(title: &'static str, name: &'static str, data: String) -> Self {
         Self {
             display: Cow::Owned(format!("{title}: {data}")),
+            icon: None,
             action: Some(Action::Copy {
                 name: Cow::Borrowed(name),
                 data,
@@ -761,12 +766,18 @@ impl Field {
     fn hidden(title: &'static str, name: &'static str, data: String) -> Self {
         Self {
             display: Cow::Borrowed(title),
+            icon: None,
             action: Some(Action::Copy {
                 name: Cow::Borrowed(name),
                 data,
                 hidden: true,
             }),
         }
+    }
+
+    fn icon(mut self, icon: Option<Icon>) -> Self {
+        self.icon = icon;
+        self
     }
 }
 
@@ -792,7 +803,6 @@ enum Action {
 use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
-use crate::icons;
 use crate::parallel_try_fill;
 use crate::Icon;
 use crate::Icons;

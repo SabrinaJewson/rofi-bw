@@ -261,6 +261,7 @@ impl Resource {
     }
 
     fn file_name(self) -> &'static str {
+        // TODO: Allow light icons as well?
         match self {
             Self::Amex => "amex-dark.png",
             Self::DinersClub => "diners_club-dark.png",

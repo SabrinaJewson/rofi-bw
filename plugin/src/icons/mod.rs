@@ -42,6 +42,12 @@ pub(crate) enum Icon {
     Resource(Resource),
 }
 
+impl Icon {
+    pub(crate) fn card(brand: &str) -> Option<Self> {
+        Resource::card_icon(brand).map(Self::Resource)
+    }
+}
+
 use bitwarden::Bitwarden;
 mod bitwarden;
 
