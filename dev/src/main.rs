@@ -89,7 +89,8 @@ fn run(args: RunArgs) -> anyhow::Result<()> {
 
     let status = process::Command::new(PathBuf::from_iter(["build", "rofi-bw"]))
         .env("ROFI_BW_LIB_DIR", PathBuf::from_iter(["build", "lib"]))
-        .env("ROFI_BW_RESOURCES_DIR", PathBuf::from("resources"))
+        // Put a path that will always fail at start for extra testing
+        .env("ROFI_BW_RESOURCES_DIR", "doesnt-exist:resources")
         .args(args.rest)
         .status()
         .context("failed to spawn rofi-bw")?;

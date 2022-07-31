@@ -1,37 +1,46 @@
+// TODO: SyncWrapper everything
 pub(crate) struct Icons {
-    runtime: tokio::runtime::Runtime,
     bitwarden: Bitwarden,
-    resources: Resources,
+    cards: Cards,
+    font: Font,
+    runtime: tokio::runtime::Runtime,
+    resource_dirs: ResourceDirs,
 }
 
 impl Icons {
     pub(crate) fn new() -> anyhow::Result<Self> {
+        let resource_dirs = ResourceDirs::from_env();
         Ok(Self {
-            runtime: tokio::runtime::Runtime::new().context("failed to start Tokio runtime")?,
             bitwarden: Bitwarden::new()?,
-            resources: Resources::new(),
+            cards: Cards::new(),
+            font: Font::new(&resource_dirs)?,
+            runtime: tokio::runtime::Runtime::new().context("failed to start Tokio runtime")?,
+            resource_dirs,
         })
     }
 
-    pub(crate) fn start_fetch(&mut self, icon: Icon) {
+    pub(crate) fn start_fetch(&mut self, icon: &Icon) {
         let _runtime_context = self.runtime.enter();
         match icon {
-            Icon::Host(host) => self.bitwarden.start_fetch(host),
-            Icon::Resource(resource) => self.resources.start_fetch(resource),
+            Icon::Host(host) => self.bitwarden.start_fetch(host.clone()),
+            &Icon::Card(card) => self.cards.start_fetch(&self.resource_dirs, card),
+            Icon::Glyph(_) => {}
         }
     }
 
-    pub(crate) fn surface(&mut self, icon: &Icon) -> Option<cairo::Surface> {
+    pub(crate) fn surface(&mut self, icon: &Icon, height: u32) -> Option<cairo::Surface> {
         match icon {
             Icon::Host(host) => self.bitwarden.surface(host),
-            &Icon::Resource(resource) => self.resources.surface(resource),
+            &Icon::Card(card) => self.cards.surface(card),
+            &Icon::Glyph(glyph) => self.font.surface(glyph, height),
         }
     }
 
     pub(crate) fn fs_path(&mut self, icon: &Icon) -> Option<&fs::Path> {
         match icon {
             Icon::Host(host) => self.bitwarden.fs_path(host),
-            &Icon::Resource(resource) => self.resources.fs_path(resource),
+            &Icon::Card(card) => self.cards.fs_path(card),
+            &Icon::Glyph(_) => None,
         }
     }
 }
@@ -39,22 +48,28 @@ impl Icons {
 #[derive(Debug, Clone)]
 pub(crate) enum Icon {
     Host(Arc<str>),
-    Resource(Resource),
+    Card(Card),
+    Glyph(Glyph),
 }
 
 impl Icon {
     pub(crate) fn card(brand: &str) -> Option<Self> {
-        Resource::card_icon(brand).map(Self::Resource)
+        Card::from_str(brand).map(Self::Card)
     }
 }
 
 use bitwarden::Bitwarden;
 mod bitwarden;
 
-pub(crate) use resources::Resource;
-use resources::Resources;
-mod resources;
+pub(crate) use cards::Card;
+use cards::Cards;
+mod cards;
 
+use font::Font;
+pub(crate) use font::Glyph;
+mod font;
+
+use crate::resource_dirs::ResourceDirs;
 use anyhow::Context as _;
 use rofi_bw_common::fs;
 use rofi_mode::cairo;

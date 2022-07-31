@@ -25,7 +25,9 @@ sha2 = { version = "0.10.2", features = ["std"] }
 anyhow = { version = "1.0.58", features = ["std"] }
 base64 = { version = "0.13.0", features = ["std"] }
 bytes = "1.2.0"
+cairo-sys-rs = { version = "0.15.1", features = ["freetype"] }
 directories = "4.0.1"
+freetype-rs = "0.30.1"
 image = { version = "0.24.3", default-features = false, features = ["ico", "jpeg_rayon", "png", "tiff", "webp", "jpeg"] }
 memchr = "2.5.0"
 rand = { version = "0.8.5", features = ["std"] }

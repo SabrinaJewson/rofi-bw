@@ -1,31 +1,29 @@
-//! Icons loaded from `rofi-bw`’s resources directories (`/usr/local/share/rofi-bw` by default).
-//! These are the bank card icons.
+//! Card icons loaded from `rofi-bw`’s resources directories (`/usr/local/share/rofi-bw` by
+//! default).
 // TODO: reduce code duplciation between this and bitwarden.rs
 
-pub(crate) struct Resources {
-    dirs: Dirs,
-    icons: [Option<IconState>; Resource::COUNT],
+pub(crate) struct Cards {
+    icons: [Option<IconState>; Card::COUNT],
 }
 
-impl Resources {
+impl Cards {
     pub(crate) fn new() -> Self {
         // const to allow array repetition syntax
         const NO_STATE: Option<IconState> = None;
 
         Self {
-            dirs: Dirs::from_env(),
-            icons: [NO_STATE; Resource::COUNT],
+            icons: [NO_STATE; Card::COUNT],
         }
     }
 
-    pub(crate) fn start_fetch(&mut self, icon: Resource) {
-        if self.icons[icon as usize].is_some() {
+    pub(crate) fn start_fetch(&mut self, dirs: &ResourceDirs, card: Card) {
+        if self.icons[card as usize].is_some() {
             return;
         }
 
-        let dirs = self.dirs.clone();
+        let dirs = dirs.clone();
         let handle = tokio::task::spawn_blocking(move || {
-            let file_name = icon.file_name();
+            let file_name = card.file_name();
 
             let mut file = None;
             for dir in &dirs {
@@ -54,21 +52,21 @@ impl Resources {
             Ok((file.into_inner().into_path(), image_data))
         });
 
-        self.icons[icon as usize] = Some(IconState::Loading(handle));
+        self.icons[card as usize] = Some(IconState::Loading(handle));
     }
 
-    pub(crate) fn surface(&mut self, icon: Resource) -> Option<cairo::Surface> {
-        let icon = self.get(icon)?;
+    pub(crate) fn surface(&mut self, card: Card) -> Option<cairo::Surface> {
+        let icon = self.get(card)?;
         Some((**icon.surface.get_mut()).clone())
     }
 
-    pub(crate) fn fs_path(&mut self, icon: Resource) -> Option<&fs::Path> {
-        let icon = self.get(icon)?;
+    pub(crate) fn fs_path(&mut self, card: Card) -> Option<&fs::Path> {
+        let icon = self.get(card)?;
         Some(&*icon.path)
     }
 
-    fn get(&mut self, icon: Resource) -> Option<&mut LoadedIcon> {
-        let icon_state = self.icons[icon as usize].as_mut().unwrap();
+    fn get(&mut self, card: Card) -> Option<&mut LoadedIcon> {
+        let icon_state = self.icons[card as usize].as_mut().unwrap();
 
         if let IconState::Loading(handle) = icon_state {
             let task_result = poll_future_once(handle)?;
@@ -84,7 +82,7 @@ impl Resources {
                     surface: SyncWrapper::new(surface),
                 }),
                 Err(e) => {
-                    let context = format!("failed to load icon {}", icon.to_str());
+                    let context = format!("failed to load icon {}", card.to_str());
                     eprintln!("Warning: {:?}", e.context(context));
                     None
                 }
@@ -98,110 +96,6 @@ impl Resources {
     }
 }
 
-use dirs::Dirs;
-mod dirs {
-    #[derive(Debug, Clone)]
-    pub(crate) enum Dirs {
-        Dynamic(Arc<OsStr>),
-        Default,
-    }
-
-    impl Dirs {
-        pub(crate) fn from_env() -> Self {
-            match env::var_os("ROFI_BW_RESOURCES_DIR") {
-                Some(env) => Self::Dynamic(Arc::from(&*env)),
-                None => Self::Default,
-            }
-        }
-
-        pub(crate) fn iter(&self) -> Iter<'_> {
-            match self {
-                Self::Dynamic(os_str) => Iter::Dynamic(os_str.as_bytes()),
-                Self::Default => Iter::BeforeUsr,
-            }
-        }
-    }
-
-    impl<'dirs> IntoIterator for &'dirs Dirs {
-        type Item = &'dirs fs::Path;
-        type IntoIter = Iter<'dirs>;
-        fn into_iter(self) -> Self::IntoIter {
-            self.iter()
-        }
-    }
-
-    pub(crate) enum Iter<'dirs> {
-        Dynamic(&'dirs [u8]),
-        BeforeUsr,
-        BeforeUsrLocal,
-        Finished,
-    }
-
-    impl<'dirs> Iterator for Iter<'dirs> {
-        type Item = &'dirs fs::Path;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            match &*self {
-                &Self::Dynamic(remaining) => {
-                    let bytes = if let Some(colon) = memchr(b':', remaining) {
-                        *self = Self::Dynamic(&remaining[colon + 1..]);
-                        &remaining[..colon]
-                    } else {
-                        *self = Self::Finished;
-                        remaining
-                    };
-                    Some(fs::Path::new(OsStr::from_bytes(bytes)))
-                }
-                Self::BeforeUsr => {
-                    *self = Self::BeforeUsrLocal;
-                    Some(fs::Path::new("/usr/share/rofi-bw"))
-                }
-                Self::BeforeUsrLocal => {
-                    *self = Self::Finished;
-                    Some(fs::Path::new("/usr/local/share/rofi-bw"))
-                }
-                Self::Finished => None,
-            }
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        #[test]
-        fn iter_dynamic() {
-            let dirs = Dirs::Dynamic(Arc::from(OsStr::from_bytes(b"foo:bar:baz:")));
-            let dirs = dirs
-                .iter()
-                .map(|path| path.as_os_str().as_bytes())
-                .collect::<Vec<_>>();
-            let expected: [&[u8]; 4] = [b"foo", b"bar", b"baz", b""];
-            assert_eq!(dirs, expected,);
-        }
-
-        #[test]
-        fn iter_default() {
-            let dirs = Dirs::Default
-                .iter()
-                .map(|path| path.as_os_str().as_bytes())
-                .collect::<Vec<_>>();
-            let expected: [&[u8]; 2] = [b"/usr/share/rofi-bw", b"/usr/local/share/rofi-bw"];
-            assert_eq!(dirs, expected);
-        }
-
-        use super::Dirs;
-        use std::ffi::OsStr;
-        use std::os::unix::ffi::OsStrExt as _;
-        use std::sync::Arc;
-    }
-
-    use memchr::memchr;
-    use rofi_bw_common::fs;
-    use std::env;
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt as _;
-    use std::sync::Arc;
-}
-
 enum IconState {
     Loading(tokio::task::JoinHandle<anyhow::Result<(fs::PathBuf, CairoImageData)>>),
     Loaded(Option<LoadedIcon>),
@@ -213,7 +107,7 @@ struct LoadedIcon {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Resource {
+pub(crate) enum Card {
     Amex = 0,
     DinersClub,
     Discover,
@@ -226,10 +120,10 @@ pub(crate) enum Resource {
     Visa,
 }
 
-impl Resource {
+impl Card {
     const COUNT: usize = 10;
 
-    pub(crate) fn card_icon(s: &str) -> Option<Self> {
+    pub(crate) fn from_str(s: &str) -> Option<Self> {
         Some(match s {
             "Amex" => Self::Amex,
             "Diners Club" => Self::DinersClub,
@@ -277,8 +171,9 @@ impl Resource {
     }
 }
 
-use crate::cairo_image_data::CairoImageData;
-use crate::poll_future_once::poll_future_once;
+use crate::poll_future_once;
+use crate::CairoImageData;
+use crate::ResourceDirs;
 use crate::SyncWrapper;
 use anyhow::Context as _;
 use rofi_bw_common::fs;

@@ -12,9 +12,7 @@ impl Initialized {
         let state = State::new(master_key, data, view)?;
 
         for cipher in &state.ciphers {
-            if let Some(icon) = &cipher.icon {
-                icons.start_fetch(icon.clone());
-            }
+            icons.start_fetch(&cipher.icon);
         }
 
         Ok(Self {
@@ -51,12 +49,12 @@ impl Initialized {
         }
     }
 
-    pub(crate) fn entry_icon(&mut self, line: usize) -> Option<cairo::Surface> {
+    pub(crate) fn entry_icon(&mut self, line: usize, height: u32) -> Option<cairo::Surface> {
         let icon = match self.state.viewing() {
             Viewing::CipherList(list) => &self.state.ciphers[list.contents[line]].icon,
-            Viewing::Cipher(cipher) => &cipher.fields[line].icon,
+            Viewing::Cipher(cipher) => cipher.fields[line].icon.as_ref()?,
         };
-        self.icons.surface(icon.as_ref()?)
+        self.icons.surface(icon, height)
     }
 
     pub(crate) fn show(&mut self, list: CipherList) {
@@ -100,10 +98,9 @@ impl Initialized {
                 let cipher_name = cipher.name.clone();
                 let reprompt = *hidden && cipher.reprompt;
 
-                let image_path = cipher
-                    .icon
-                    .as_ref()
-                    .and_then(|icon| self.icons.fs_path(icon))
+                let image_path = self
+                    .icons
+                    .fs_path(&cipher.icon)
                     .and_then(|path| std::fs::canonicalize(path).ok())
                     .and_then(|path| path.into_os_string().into_string().ok());
 
@@ -167,6 +164,7 @@ impl State {
             &mut *ciphers,
         )?;
 
+        // TODO: Use a proper Unicode sort
         ciphers.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
 
         let ciphers = CipherSet::from_boxed_slice(ciphers);
@@ -260,7 +258,7 @@ fn process_cipher(cipher: data::Cipher, key: &SymmetricKey) -> anyhow::Result<Ci
             if cipher.notes.is_some() {
                 default_copy = Some(fields.len());
             }
-            icon = None;
+            icon = Icon::Glyph(icons::Glyph::SecureNote);
             CipherType::SecureNote
         }
         CipherData::Card(card) => {
@@ -313,8 +311,8 @@ fn process_login(
     key: &SymmetricKey,
     fields: &mut Vec<Field>,
     default_copy: &mut Option<usize>,
-) -> anyhow::Result<Option<Icon>> {
-    let icon = extract_host(&login, key).map(Icon::Host);
+) -> anyhow::Result<Icon> {
+    let icon = extract_host(&login, key).map_or(Icon::Glyph(icons::Glyph::Login), Icon::Host);
 
     if let Some(username) = login.username {
         fields.push(Field::username(username.decrypt(key)?));
@@ -336,8 +334,7 @@ fn process_card(
     card: data::Card,
     key: &SymmetricKey,
     fields: &mut Vec<Field>,
-) -> anyhow::Result<Option<Icon>> {
-    // TODO: Fallback card icon
+) -> anyhow::Result<Icon> {
     let mut icon = None;
 
     if let Some(cardholder_name) = card.cardholder_name {
@@ -365,14 +362,14 @@ fn process_card(
         fields.push(Field::card_code(code.decrypt(key)?));
     }
 
-    Ok(icon)
+    Ok(icon.unwrap_or(Icon::Glyph(icons::Glyph::Card)))
 }
 
 fn process_identity(
     identity: data::Identity,
     key: &SymmetricKey,
     fields: &mut Vec<Field>,
-) -> anyhow::Result<Option<Icon>> {
+) -> anyhow::Result<Icon> {
     if identity.title.is_some()
         || identity.first_name.is_some()
         || identity.middle_name.is_some()
@@ -433,7 +430,7 @@ fn process_identity(
         ));
     }
 
-    Ok(None)
+    Ok(Icon::Glyph(icons::Glyph::Identity))
 }
 
 fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
@@ -544,7 +541,7 @@ struct Cipher {
     deleted: bool,
     favourite: bool,
     name: String,
-    icon: Option<Icon>,
+    icon: Icon,
     reprompt: bool,
     fields: Vec<Field>,
     default_copy: Option<usize>,
@@ -558,7 +555,7 @@ impl Cipher {
             deleted: false,
             favourite: false,
             name: String::new(),
-            icon: None,
+            icon: Icon::Glyph(icons::Glyph::Login),
             reprompt: false,
             fields: Vec::new(),
             default_copy: None,
@@ -803,6 +800,7 @@ enum Action {
 use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
+use crate::icons;
 use crate::parallel_try_fill;
 use crate::Icon;
 use crate::Icons;

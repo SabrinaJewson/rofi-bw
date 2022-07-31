@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub(crate) struct SyncWrapper<T>(T);
 
 impl<T> SyncWrapper<T> {

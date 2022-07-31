@@ -89,9 +89,9 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         self.entry_content(line).into()
     }
 
-    fn entry_icon(&mut self, line: usize, _height: u32) -> Option<cairo::Surface> {
+    fn entry_icon(&mut self, line: usize, height: u32) -> Option<cairo::Surface> {
         match &mut self.state {
-            State::Initialized(initialized) => initialized.entry_icon(line),
+            State::Initialized(initialized) => initialized.entry_icon(line, height),
             State::Errored(_) => panic!("this mode has no entries"),
         }
     }
@@ -280,6 +280,9 @@ mod cipher_string;
 
 use symmetric_key::SymmetricKey;
 mod symmetric_key;
+
+use resource_dirs::ResourceDirs;
+mod resource_dirs;
 
 use base64_decode_array::base64_decode_array;
 mod base64_decode_array;
