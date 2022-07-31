@@ -52,7 +52,7 @@ impl Initialized {
     pub(crate) fn entry_icon(&mut self, line: usize, height: u32) -> Option<cairo::Surface> {
         let icon = match self.state.viewing() {
             Viewing::CipherList(list) => &self.state.ciphers[list.contents[line]].icon,
-            Viewing::Cipher(cipher) => cipher.fields[line].icon.as_ref()?,
+            Viewing::Cipher(cipher) => &cipher.fields[line].icon,
         };
         self.icons.surface(icon, height)
     }
@@ -147,6 +147,7 @@ struct State {
 enum View {
     CipherList(CipherList),
     Cipher(cipher_set::Index),
+    // TODO: folder view
 }
 
 impl State {
@@ -565,29 +566,30 @@ impl Cipher {
 
 struct Field {
     display: Cow<'static, str>,
-    icon: Option<Icon>,
+    icon: Icon,
     action: Option<Action>,
 }
 
 impl Field {
     fn username(username: String) -> Self {
-        Self::shown("Username", "username", username)
+        Self::shown("Username", "username", username, icons::Glyph::User)
     }
     fn password(password: String) -> Self {
-        Self::hidden("Password", "password", password)
+        Self::hidden("Password", "password", password, icons::Glyph::Key)
     }
     fn uri(uri: String) -> Self {
-        Self::shown("Uri", "URI", uri)
+        Self::shown("Uri", "URI", uri, icons::Glyph::Chain)
     }
     fn cardholder_name(name: String) -> Self {
-        Self::shown("Cardholder name", "cardholder name", name)
+        let icon = icons::Glyph::User;
+        Self::shown("Cardholder name", "cardholder name", name, icon)
     }
     fn card_brand(brand: String) -> Self {
-        let icon = Icon::card(&*brand);
-        Self::shown("Brand", "brand", brand).icon(icon)
+        let icon = Icon::card(&*brand).unwrap_or(Icon::Glyph(icons::Glyph::Card));
+        Self::shown("Brand", "brand", brand, icon)
     }
     fn card_number(number: String) -> Self {
-        Self::hidden("Number", "number", number)
+        Self::hidden("Number", "number", number, icons::Glyph::Hash)
     }
     fn card_expiration(month: Option<String>, year: Option<String>) -> Self {
         // TODO: Internationalize this?
@@ -596,10 +598,11 @@ impl Field {
             month.as_deref().unwrap_or("__"),
             year.as_deref().unwrap_or("____"),
         );
-        Self::shown("Expiration", "expiration", expiration)
+        Self::shown("Expiration", "expiration", expiration, icons::Glyph::Clock)
     }
     fn card_code(code: String) -> Self {
-        Self::hidden("Security code", "security code", code)
+        let icon = icons::Glyph::Padlock;
+        Self::hidden("Security code", "security code", code, icon)
     }
     fn identity_name(
         title: Option<String>,
@@ -619,13 +622,13 @@ impl Field {
                 name.push_str(&*part);
             }
         }
-        Self::shown("Identity name", "name", name)
+        Self::shown("Identity name", "name", name, icons::Glyph::Identity)
     }
     fn identity_username(username: String) -> Self {
-        Self::shown("Username", "username", username)
+        Self::shown("Username", "username", username, icons::Glyph::User)
     }
     fn identity_company(company: String) -> Self {
-        Self::shown("Company", "company", company)
+        Self::shown("Company", "company", company, icons::Glyph::Briefcase)
     }
     fn identity_ssn(ssn: String) -> Self {
         // TODO: Internationalize
@@ -633,19 +636,22 @@ impl Field {
             "National Insurance number",
             "national insurance number",
             ssn,
+            icons::Glyph::Hash,
         )
     }
     fn identity_passport_number(number: String) -> Self {
-        Self::shown("Passport number", "passport number", number)
+        let icon = icons::Glyph::Login;
+        Self::shown("Passport number", "passport number", number, icon)
     }
     fn identity_licence_number(licence_number: String) -> Self {
-        Self::shown("Licence number", "licence number", licence_number)
+        let icon = icons::Glyph::Identity;
+        Self::shown("Licence number", "licence number", licence_number, icon)
     }
     fn identity_email(email: String) -> Self {
-        Self::shown("Email", "email", email)
+        Self::shown("Email", "email", email, icons::Glyph::Mail)
     }
     fn identity_phone(phone: String) -> Self {
-        Self::shown("Phone", "phone", phone)
+        Self::shown("Phone", "phone", phone, icons::Glyph::Mobile)
     }
     fn identity_address(
         address1: Option<String>,
@@ -681,7 +687,7 @@ impl Field {
             } else {
                 Cow::Borrowed("Address")
             },
-            icon: None,
+            icon: Icon::Glyph(icons::Glyph::List),
             action: Some(Action::Copy {
                 name: Cow::Borrowed("address"),
                 data,
@@ -693,7 +699,7 @@ impl Field {
         Self {
             // TODO: Note preview
             display: Cow::Borrowed("Notes"),
-            icon: None,
+            icon: Icon::Glyph(icons::Glyph::SecureNote),
             action: Some(Action::Copy {
                 name: Cow::Borrowed("note"),
                 data: notes,
@@ -715,9 +721,16 @@ impl Field {
             FieldValue::Text(None) => format!("{display_name} (empty)"),
             FieldValue::Hidden(Some(_)) => format!("{display_name} (hidden)"),
             FieldValue::Hidden(None) => format!("{display_name} (hidden, empty)"),
-            FieldValue::Boolean(false) => format!("{display_name} ☐"),
-            FieldValue::Boolean(true) => format!("{display_name} ☑"),
+            FieldValue::Boolean(v) => format!("{display_name}: {v}"),
             FieldValue::Linked(v) => format!("{display_name} → {v}"),
+        });
+
+        let icon = Icon::Glyph(match &value {
+            FieldValue::Text(_) => icons::Glyph::Pencil,
+            FieldValue::Hidden(_) => icons::Glyph::EyeSlash,
+            FieldValue::Boolean(false) => icons::Glyph::Square,
+            FieldValue::Boolean(true) => icons::Glyph::SquareCheck,
+            FieldValue::Linked(_) => icons::Glyph::Chain,
         });
 
         let name = name.map(Cow::Owned);
@@ -743,15 +756,15 @@ impl Field {
 
         Self {
             display,
-            icon: None,
+            icon,
             action,
         }
     }
 
-    fn shown(title: &'static str, name: &'static str, data: String) -> Self {
+    fn shown(title: &'static str, name: &'static str, data: String, icon: impl Into<Icon>) -> Self {
         Self {
             display: Cow::Owned(format!("{title}: {data}")),
-            icon: None,
+            icon: icon.into(),
             action: Some(Action::Copy {
                 name: Cow::Borrowed(name),
                 data,
@@ -760,21 +773,21 @@ impl Field {
         }
     }
 
-    fn hidden(title: &'static str, name: &'static str, data: String) -> Self {
+    fn hidden(
+        title: &'static str,
+        name: &'static str,
+        data: String,
+        icon: impl Into<Icon>,
+    ) -> Self {
         Self {
             display: Cow::Borrowed(title),
-            icon: None,
+            icon: icon.into(),
             action: Some(Action::Copy {
                 name: Cow::Borrowed(name),
                 data,
                 hidden: true,
             }),
         }
-    }
-
-    fn icon(mut self, icon: Option<Icon>) -> Self {
-        self.icon = icon;
-        self
     }
 }
 

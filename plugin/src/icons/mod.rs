@@ -64,6 +64,18 @@ impl Icon {
     }
 }
 
+impl From<Card> for Icon {
+    fn from(card: Card) -> Self {
+        Self::Card(card)
+    }
+}
+
+impl From<Glyph> for Icon {
+    fn from(glyph: Glyph) -> Self {
+        Self::Glyph(glyph)
+    }
+}
+
 use bitwarden::Bitwarden;
 mod bitwarden;
 
