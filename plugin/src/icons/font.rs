@@ -1,8 +1,8 @@
 //! Icons loaded from the file `bwi-font.ttf`.
 
 pub(crate) struct Font {
-    inner: SyncWrapper<Inner>,
-    cache: SyncWrapper<[Option<CachedSurface>; Glyph::COUNT]>,
+    inner: Inner,
+    cache: [Option<CachedSurface>; Glyph::COUNT],
 }
 
 impl Font {
@@ -28,17 +28,18 @@ impl Font {
         let cairo_face = cairo_font_face_from_freetype(freetype_face.clone())?;
 
         Ok(Self {
-            inner: SyncWrapper::new(Inner {
+            inner: Inner {
                 freetype_face,
                 cairo_face,
-            }),
-            cache: SyncWrapper::default(),
+            },
+            cache: Default::default(),
         })
     }
 
     pub(crate) fn surface(&mut self, glyph: Glyph, height: u32) -> Option<cairo::Surface> {
-        let cache = self.cache.get_mut();
-        if let Some(cached) = &cache[glyph as usize] {
+        let cache_entry = &mut self.cache[glyph as usize];
+
+        if let Some(cached) = cache_entry {
             let cached = match cached {
                 CachedSurface::Surface(surface) => surface,
                 CachedSurface::Errored => return None,
@@ -48,7 +49,7 @@ impl Font {
             }
         }
 
-        let (ret, for_cache) = match self.inner.get_mut().create_icon(glyph, height) {
+        let (ret, for_cache) = match self.inner.create_icon(glyph, height) {
             Ok(icon) => (Some((*icon).clone()), CachedSurface::Surface(icon)),
             Err(e) => {
                 let context = format!("failed to create icon for glyph {glyph:?}");
@@ -57,7 +58,7 @@ impl Font {
             }
         };
 
-        cache[glyph as usize] = Some(for_cache);
+        *cache_entry = Some(for_cache);
 
         ret
     }
@@ -165,6 +166,5 @@ mod cairo_font_face_from_freetype {
 }
 
 use crate::resource_dirs::ResourceDirs;
-use crate::SyncWrapper;
 use anyhow::Context as _;
 use rofi_mode::cairo;

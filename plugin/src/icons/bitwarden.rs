@@ -84,7 +84,7 @@ impl Bitwarden {
 
     pub(crate) fn surface(&mut self, host: &str) -> Option<cairo::Surface> {
         let icon = self.get(host)?;
-        Some((**icon.surface.get_mut()).clone())
+        Some((*icon.surface).clone())
     }
 
     pub(crate) fn fs_path(&mut self, host: &str) -> Option<&fs::Path> {
@@ -110,10 +110,7 @@ impl Bitwarden {
             })();
 
             *icon = Icon::Complete(match surface_result {
-                Ok(Some((path, surface))) => Some(LoadedIcon {
-                    path,
-                    surface: SyncWrapper::new(surface),
-                }),
+                Ok(Some((path, surface))) => Some(LoadedIcon { path, surface }),
                 Ok(None) => None,
                 Err(e) => {
                     let context = format!("failed to retrieve icon {host}");
@@ -137,7 +134,7 @@ enum Icon {
 
 struct LoadedIcon {
     path: fs::PathBuf,
-    surface: SyncWrapper<cairo::ImageSurface>,
+    surface: cairo::ImageSurface,
 }
 
 use download_icon::download_icon;
@@ -194,7 +191,6 @@ mod download_icon {
 use crate::poll_future_once;
 use crate::CairoImageData;
 use crate::DiskCache;
-use crate::SyncWrapper;
 use anyhow::Context as _;
 use directories::ProjectDirs;
 use rofi_bw_common::fs;

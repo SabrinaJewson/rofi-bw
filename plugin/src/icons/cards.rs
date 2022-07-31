@@ -57,7 +57,7 @@ impl Cards {
 
     pub(crate) fn surface(&mut self, card: Card) -> Option<cairo::Surface> {
         let icon = self.get(card)?;
-        Some((**icon.surface.get_mut()).clone())
+        Some((*icon.surface).clone())
     }
 
     pub(crate) fn fs_path(&mut self, card: Card) -> Option<&fs::Path> {
@@ -77,10 +77,7 @@ impl Cards {
             })();
 
             *icon_state = IconState::Loaded(match surface_result {
-                Ok((path, surface)) => Some(LoadedIcon {
-                    path,
-                    surface: SyncWrapper::new(surface),
-                }),
+                Ok((path, surface)) => Some(LoadedIcon { path, surface }),
                 Err(e) => {
                     let context = format!("failed to load icon {}", card.to_str());
                     eprintln!("Warning: {:?}", e.context(context));
@@ -103,7 +100,7 @@ enum IconState {
 
 struct LoadedIcon {
     path: fs::PathBuf,
-    surface: SyncWrapper<cairo::ImageSurface>,
+    surface: cairo::ImageSurface,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -174,7 +171,6 @@ impl Card {
 use crate::poll_future_once;
 use crate::CairoImageData;
 use crate::ResourceDirs;
-use crate::SyncWrapper;
 use anyhow::Context as _;
 use rofi_bw_common::fs;
 use rofi_mode::cairo;
