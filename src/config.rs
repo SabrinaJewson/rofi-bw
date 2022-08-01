@@ -171,7 +171,7 @@ mod auto_lock {
 
     impl Default for AutoLock {
         fn default() -> Self {
-            Self::After(Duration::from_secs(15))
+            Self::After(Duration::from_secs(15 * 60))
         }
     }
 
