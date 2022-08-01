@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Data {
@@ -11,18 +9,18 @@ pub(crate) struct Data {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Profile {
-    pub(crate) id: Uuid,
-    pub(crate) name: Option<String>,
-    pub(crate) email: String,
-    pub(crate) email_verified: bool,
-    pub(crate) premium: bool,
-    pub(crate) premium_from_organization: bool,
-    pub(crate) master_password_hint: Option<String>,
-    pub(crate) culture: String,
-    pub(crate) two_factor_enabled: bool,
+    // pub(crate) id: Uuid,
+    // pub(crate) name: Option<String>,
+    // pub(crate) email: String,
+    // pub(crate) email_verified: bool,
+    // pub(crate) premium: bool,
+    // pub(crate) premium_from_organization: bool,
+    // pub(crate) master_password_hint: Option<String>,
+    // pub(crate) culture: String,
+    // pub(crate) two_factor_enabled: bool,
     pub(crate) key: CipherString<SymmetricKey>,
     // TODO: better types? I don’t know what this does
-    pub(crate) private_key: Option<CipherString<Vec<u8>>>,
+    // pub(crate) private_key: Option<CipherString<Vec<u8>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,8 +28,8 @@ pub(crate) struct Profile {
 pub(crate) struct Folder {
     pub(crate) id: Uuid,
     pub(crate) name: CipherString<String>,
-    #[serde(with = "time::serde::rfc3339")]
-    pub(crate) revision_date: OffsetDateTime,
+    // #[serde(with = "time::serde::rfc3339")]
+    // pub(crate) revision_date: OffsetDateTime,
 }
 
 #[derive(Debug)]
@@ -39,10 +37,10 @@ pub(crate) struct Cipher {
     pub(crate) id: Uuid,
     pub(crate) folder_id: Option<Uuid>,
     pub(crate) name: CipherString<String>,
-    pub(crate) revision_date: OffsetDateTime,
+    // pub(crate) revision_date: OffsetDateTime,
     pub(crate) deleted_date: Option<OffsetDateTime>,
     pub(crate) reprompt: bool,
-    pub(crate) edit: bool,
+    // pub(crate) edit: bool,
     pub(crate) favourite: bool,
     pub(crate) data: CipherData,
     pub(crate) notes: Option<CipherString<String>>,
@@ -57,12 +55,12 @@ impl<'de> Deserialize<'de> for Cipher {
             id: Uuid,
             folder_id: Option<Uuid>,
             name: CipherString<String>,
-            #[serde(with = "time::serde::rfc3339")]
-            revision_date: OffsetDateTime,
+            // #[serde(with = "time::serde::rfc3339")]
+            // revision_date: OffsetDateTime,
             #[serde(with = "time::serde::rfc3339::option")]
             deleted_date: Option<OffsetDateTime>,
             reprompt: u8,
-            edit: bool,
+            // edit: bool,
             favorite: bool,
             notes: Option<CipherString<String>>,
             fields: Option<Vec<Field>>,
@@ -79,10 +77,10 @@ impl<'de> Deserialize<'de> for Cipher {
             id: inner.id,
             folder_id: inner.folder_id,
             name: inner.name,
-            revision_date: inner.revision_date,
+            // revision_date: inner.revision_date,
             deleted_date: inner.deleted_date,
             reprompt: inner.reprompt != 0,
-            edit: inner.edit,
+            // edit: inner.edit,
             favourite: inner.favorite,
             notes: inner.notes,
             fields: inner.fields,
@@ -113,8 +111,8 @@ pub(crate) struct Login {
     pub(crate) uris: Option<Vec<Uri>>,
     pub(crate) username: Option<CipherString<String>>,
     pub(crate) password: Option<CipherString<String>>,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub(crate) password_revision_date: Option<OffsetDateTime>,
+    // #[serde(with = "time::serde::rfc3339::option")]
+    // pub(crate) password_revision_date: Option<OffsetDateTime>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,6 +153,8 @@ pub(crate) struct Identity {
 pub(crate) struct Uri {
     pub(crate) uri: CipherString<String>,
     #[serde(rename = "match")]
+    // Dead code, but there’s enough of it that I want to make sure it always compiles
+    #[allow(dead_code)]
     pub(crate) match_type: Option<UriMatchType>,
 }
 
