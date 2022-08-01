@@ -194,6 +194,8 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
             }
         }
 
+        writeln!(message).unwrap();
+
         match &self.state {
             State::Initialized(initialized) => initialized.status(&mut message),
             State::Errored(errored) => message.push_str(&**errored),
