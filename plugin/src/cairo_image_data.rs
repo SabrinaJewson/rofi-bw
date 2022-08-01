@@ -29,6 +29,15 @@ impl CairoImageData {
                 // these casts are OK because we know the image is < u32::MAX by u32::MAX
                 #[allow(clippy::cast_possible_truncation)]
                 let image::Rgba([r, g, b, a]) = image.get_pixel(x as u32, y as u32);
+
+                // Premultiply alpha
+                #[allow(clippy::cast_possible_truncation)]
+                let (r, g, b) = (
+                    (u16::from(r) * u16::from(a) / 255) as u8,
+                    (u16::from(g) * u16::from(a) / 255) as u8,
+                    (u16::from(b) * u16::from(a) / 255) as u8,
+                );
+
                 let argb = u32::from_be_bytes([a, r, g, b]).to_ne_bytes();
                 pixel.copy_from_slice(&argb);
             }
