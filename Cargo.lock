@@ -540,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "dev"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap 3.2.14",
@@ -1651,7 +1651,7 @@ dependencies = [
 
 [[package]]
 name = "rofi-bw"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "aead",
  "anyhow",

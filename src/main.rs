@@ -26,6 +26,7 @@ fn main() -> process::ExitCode {
 
 /// Rofi interface to Bitwarden.
 #[derive(clap::Parser)]
+#[clap(version)]
 #[clap(group = clap::ArgGroup::new("view").args(&[
     "cipher-uuid", "cipher-name", "folder-uuid", "folder-name", "show"
 ]))]
