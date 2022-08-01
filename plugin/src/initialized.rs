@@ -195,9 +195,11 @@ impl State {
     pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
         let key = data.profile.key.decrypt(master_key)?;
 
+        let collator = Collator::default_locale()?;
+
         let (folders_result, ciphers_result) = rayon::join(
-            || process_folders(data.folders, &key),
-            || process_ciphers(data.ciphers, &key),
+            || process_folders(data.folders, &key, &collator),
+            || process_ciphers(data.ciphers, &key, &collator),
         );
         let (mut folders, folder_map) = folders_result?;
         let ciphers = ciphers_result?;
@@ -289,6 +291,7 @@ enum Viewing<'a> {
 fn process_folders(
     folders: Vec<data::Folder>,
     key: &SymmetricKey,
+    collator: &Collator,
 ) -> anyhow::Result<(Box<TypedSlice<Folder>>, FolderMap)> {
     let mut processed = Vec::with_capacity(folders.len() + 1);
 
@@ -296,8 +299,11 @@ fn process_folders(
         processed.push(process_folder(folder, key)?);
     }
 
-    // TODO: Use a proper Unicode sort
-    processed.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    try_sort::unstable_by(&mut *processed, |a, b| -> anyhow::Result<_> {
+        Ok(collator
+            .strcoll_utf8(&*a.name, &*b.name)?
+            .then_with(|| a.id.cmp(&b.id)))
+    })?;
 
     processed.push(Folder {
         id: None,
@@ -318,6 +324,7 @@ fn process_folders(
 fn process_ciphers(
     ciphers: Vec<data::Cipher>,
     key: &SymmetricKey,
+    collator: &Collator,
 ) -> anyhow::Result<Box<TypedSlice<Cipher>>> {
     let mut processed = (0..ciphers.len())
         .map(|_| Cipher::safe_uninit())
@@ -330,8 +337,11 @@ fn process_ciphers(
         &mut *processed,
     )?;
 
-    // TODO: Use a proper Unicode sort
-    processed.sort_unstable_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    try_sort::unstable_by(&mut *processed, |a, b| -> anyhow::Result<_> {
+        Ok(collator
+            .strcoll_utf8(&*a.name, &*b.name)?
+            .then_with(|| a.id.cmp(&b.id)))
+    })?;
 
     Ok(TypedSlice::from_boxed_slice(processed))
 }
@@ -956,6 +966,103 @@ mod typed_slice {
     use core::slice;
     use std::marker::PhantomData;
     use std::ops;
+}
+
+use collator::Collator;
+mod collator {
+    pub(crate) struct Collator {
+        rep: ptr::NonNull<rust_icu_sys::UCollator>,
+    }
+
+    unsafe impl Send for Collator {}
+
+    // SAFETY: ICU APIs are thread-safe
+    unsafe impl Sync for Collator {}
+
+    const _: () = {
+        // TODO: Don’t import this: https://github.com/google/rust_icu/pull/251
+        #[allow(clippy::wildcard_imports)]
+        use rust_icu_sys::*;
+        // TODO: Don’t import this: https://github.com/google/rust_icu/pull/252
+        use rust_icu_sys::versioned_function;
+        rust_icu_common::simple_drop_impl!(Collator, ucol_close);
+    };
+
+    impl Collator {
+        pub(crate) fn default_locale() -> anyhow::Result<Self> {
+            let mut status = rust_icu_common::Error::OK_CODE;
+            let rep = unsafe {
+                // TODO: Don’t import this: https://github.com/google/rust_icu/pull/251
+                #[allow(clippy::wildcard_imports)]
+                use rust_icu_sys::*;
+                versioned_function!(ucol_open)(ptr::null(), &mut status)
+            };
+            rust_icu_common::Error::ok_or_warning(status)
+                .context("failed to open Unicode collator")?;
+
+            Ok(Self {
+                rep: ptr::NonNull::new(rep).unwrap(),
+            })
+        }
+
+        pub(crate) fn strcoll_utf8(&self, a: &str, b: &str) -> anyhow::Result<cmp::Ordering> {
+            self.strcoll_utf8_inner(a, b)
+                .context("failed to compare two strings")
+        }
+
+        fn strcoll_utf8_inner(&self, a: &str, b: &str) -> anyhow::Result<cmp::Ordering> {
+            let a_len = i32::try_from(a.len()).context("a string is too long")?;
+            let b_len = i32::try_from(b.len()).context("b string is too long")?;
+
+            let mut status = rust_icu_common::Error::OK_CODE;
+            let res = unsafe {
+                #[allow(clippy::wildcard_imports)]
+                use rust_icu_sys::*;
+                versioned_function!(ucol_strcollUTF8)(
+                    self.rep.as_ptr(),
+                    a.as_ptr().cast(),
+                    a_len,
+                    b.as_ptr().cast(),
+                    b_len,
+                    &mut status,
+                )
+            };
+            rust_icu_common::Error::ok_or_warning(status)?;
+            Ok(match res {
+                rust_icu_sys::UCollationResult::UCOL_LESS => cmp::Ordering::Less,
+                rust_icu_sys::UCollationResult::UCOL_EQUAL => cmp::Ordering::Equal,
+                rust_icu_sys::UCollationResult::UCOL_GREATER => cmp::Ordering::Greater,
+            })
+        }
+    }
+
+    use anyhow::Context as _;
+    use std::cmp;
+    use std::ptr;
+}
+
+mod try_sort {
+    pub(crate) fn unstable_by<T, E, F>(slice: &mut [T], mut compare: F) -> Result<(), E>
+    where
+        F: FnMut(&T, &T) -> Result<cmp::Ordering, E>,
+    {
+        let mut res = Ok(());
+        slice.sort_unstable_by(|a, b| {
+            if res.is_err() {
+                return cmp::Ordering::Equal;
+            }
+            match compare(a, b) {
+                Ok(ordering) => ordering,
+                Err(e) => {
+                    res = Err(e);
+                    cmp::Ordering::Equal
+                }
+            }
+        });
+        res
+    }
+
+    use std::cmp;
 }
 
 use crate::data;
