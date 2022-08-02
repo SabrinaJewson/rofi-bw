@@ -36,7 +36,7 @@
           name: "Build",
           # Statically link against ICU because it has frequently changing version numbers
           env: {
-            "RUSTFLAGS": "-L/usr/lib/x86_64-linux-gnu -lstatic=icui18n -lstatic=icuuc -lstatic=icudata -lstatic=stdc++",
+            "RUSTFLAGS": "-L/usr/lib -L/usr/lib/x86_64-linux-gnu -lstatic=icui18n -lstatic=icuuc -lstatic=icudata -lstatic=stdc++",
           },
           run: "cargo dev build --release",
         },
