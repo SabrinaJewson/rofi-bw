@@ -27,7 +27,7 @@ impl Cards {
 
             let mut file = None;
             for data_dir in &*data_dirs {
-                let mut path = data_dir.join("rofi-bw");
+                let mut path = data_dir.join("rofi-bw/cards");
                 path.push(file_name);
                 match fs::file::open::read_only(path) {
                     Ok(opened_file) => {
