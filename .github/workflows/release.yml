@@ -34,6 +34,10 @@
         },
         {
           name: "Build",
+          # Statically link against ICU because it has frequently changing version numbers
+          env: {
+            "RUSTFLAGS": "-lstatic=icui18n -lstatic=icuuc -lstatic=icudata -lstatic=stdc++",
+          },
           run: "cargo dev build --release",
         },
         {
