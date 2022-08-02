@@ -12,7 +12,7 @@
 fn main() -> anyhow::Result<()> {
     let manifest_dir = env::var_os("CARGO_MANIFEST_DIR")
         .context("failed to find manifest dir; are you running with `cargo dev`?")?;
-    let mut manifest_dir = PathBuf::from(manifest_dir);
+    let mut manifest_dir = fs::PathBuf::from(manifest_dir);
     manifest_dir.pop();
     env::set_current_dir(manifest_dir).context("failed to set current dir")?;
 
@@ -57,17 +57,26 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
 
     anyhow::ensure!(status.success(), "Cargo failed");
 
-    let target_base = PathBuf::from_iter(["target", profile_dir_name]);
+    let target_base = fs::PathBuf::from_iter(["target", profile_dir_name]);
 
-    let build_dir = Path::new("build");
-    let lib_dir = build_dir.join("lib");
-    fs::create_dir_all(&*lib_dir)?;
-    fs::rename(
+    copy_p(
         &*target_base.join("librofi_bw_plugin.so"),
-        &*lib_dir.join("plugin.so"),
+        fs::Path::new("build/lib/rofi-bw/plugin.so"),
     )?;
-
-    fs::rename(&*target_base.join("rofi-bw"), &*build_dir.join("rofi-bw"))?;
+    copy_p(
+        &*target_base.join("rofi-bw"),
+        fs::Path::new("build/bin/rofi-bw"),
+    )?;
+    copy_p(
+        fs::Path::new("resources/bwi-font.ttf"),
+        fs::Path::new("build/share/rofi-bw/bwi-font.ttf"),
+    )?;
+    let cards_dir = fs::Path::new("build/share/rofi-bw/cards");
+    for card in fs::read_dir(fs::Path::new("resources/cards"))? {
+        let card = card?;
+        let path = card.path();
+        copy_p(&*path, &*cards_dir.join(path.file_name().unwrap()))?;
+    }
 
     Ok(())
 }
@@ -85,10 +94,10 @@ struct RunArgs {
 fn run(args: RunArgs) -> anyhow::Result<()> {
     build(args.build_args)?;
 
-    let status = process::Command::new(PathBuf::from_iter(["build", "rofi-bw"]))
-        .env("ROFI_BW_LIB_DIR", PathBuf::from_iter(["build", "lib"]))
+    let status = process::Command::new(fs::Path::new("build/bin/rofi-bw"))
+        .env("ROFI_BW_LIB_DIR", fs::Path::new("build/lib/rofi-bw"))
         // Put a path that will always fail at start for extra testing
-        .env("XDG_DATA_DIRS", "doesnt-exist:resources")
+        .env("XDG_DATA_DIRS", "doesnt-exist:build/share")
         .args(args.rest)
         .status()
         .context("failed to spawn rofi-bw")?;
@@ -98,11 +107,17 @@ fn run(args: RunArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn copy_p(src: &fs::Path, to: &fs::Path) -> anyhow::Result<()> {
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(src, to)?;
+    Ok(())
+}
+
 use anyhow::Context as _;
 use clap::Parser as _;
 use rofi_bw_util::fs;
 use std::env;
 use std::ffi::OsString;
-use std::path::Path;
-use std::path::PathBuf;
 use std::process;

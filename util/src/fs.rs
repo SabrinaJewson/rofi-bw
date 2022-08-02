@@ -243,6 +243,47 @@ pub mod rename {
     use std::io;
 }
 
+pub use copy::copy;
+pub mod copy {
+    pub fn copy(from: &fs::Path, to: &fs::Path) -> Result<u64, Error> {
+        std::fs::copy(from, to).map_err(|source| Error {
+            from: from.into(),
+            to: to.into(),
+            source,
+        })
+    }
+
+    #[derive(Debug)]
+    pub struct Error {
+        pub from: Box<fs::Path>,
+        pub to: Box<fs::Path>,
+        pub source: io::Error,
+    }
+
+    impl Display for Error {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "failed to copy {} to {}",
+                self.from.display(),
+                self.to.display()
+            )
+        }
+    }
+
+    impl std::error::Error for Error {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.source)
+        }
+    }
+
+    use crate::fs;
+    use std::fmt;
+    use std::fmt::Display;
+    use std::fmt::Formatter;
+    use std::io;
+}
+
 pub use file::File;
 pub mod file {
     #[derive(Debug)]
@@ -298,11 +339,6 @@ pub mod file {
                 .with_context(|| format!("failed to seek in {}", self.path.borrow().display()))
         }
     }
-
-    use crate::fs;
-    use crate::fs::io_error_context::Context as _;
-    use std::borrow::Borrow;
-    use std::io;
 
     pub use open::open;
     pub mod open {
@@ -435,6 +471,11 @@ pub mod file {
         use std::fmt::Formatter;
         use std::io;
     }
+
+    use crate::fs;
+    use crate::fs::io_error_context::Context as _;
+    use std::borrow::Borrow;
+    use std::io;
 }
 
 pub use read::read;
@@ -697,6 +738,58 @@ pub mod overwrite {
     use std::fmt::Formatter;
     use std::io;
     use std::io::Write as _;
+}
+
+pub use read_dir::read_dir;
+pub mod read_dir {
+    pub fn read_dir<P: Borrow<fs::Path>>(path: P) -> Result<ReadDir<P>, Error> {
+        let std = std::fs::read_dir(path.borrow()).map_err(|source| Error {
+            path: path.borrow().into(),
+            source,
+        })?;
+        Ok(ReadDir { std, path })
+    }
+
+    pub struct ReadDir<P: Borrow<fs::Path>> {
+        std: std::fs::ReadDir,
+        path: P,
+    }
+
+    impl<P: Borrow<fs::Path>> Iterator for ReadDir<P> {
+        type Item = Result<std::fs::DirEntry, Error>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            Some(self.std.next()?.map_err(|source| Error {
+                path: self.path.borrow().into(),
+                source,
+            }))
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct Error {
+        pub path: Box<fs::Path>,
+        pub source: io::Error,
+    }
+
+    impl Display for Error {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "failed to read directory {}", self.path.display())
+        }
+    }
+
+    impl std::error::Error for Error {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.source)
+        }
+    }
+
+    use crate::fs;
+    use std::borrow::Borrow;
+    use std::fmt;
+    use std::fmt::Display;
+    use std::fmt::Formatter;
+    use std::io;
 }
 
 mod io_error_context {

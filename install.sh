@@ -4,12 +4,14 @@ set -eu
 
 cd "$(dirname $0)"
 
-mkdir -p /usr/local/share/rofi-bw
-cp resources/*.png /usr/local/share/rofi-bw
-cp resources/*.ttf /usr/local/share/rofi-bw
+rm -rf /usr/local/share/rofi-bw
+mkdir -p /usr/local/share
+cp -r build/share/rofi-bw /usr/local/share
 
-mkdir -p /usr/local/lib/rofi-bw
-cp build/lib/plugin.so /usr/local/lib/rofi-bw/plugin.so
+rm -rf /usr/local/lib/rofi-bw
+mkdir -p /usr/local/lib
+cp -r build/lib/rofi-bw /usr/local/lib
 
+rm -f /usr/local/bin/rofi-bw
 mkdir -p /usr/local/bin
-cp build/rofi-bw /usr/local/bin/rofi-bw
+cp -r build/bin/rofi-bw /usr/local/bin

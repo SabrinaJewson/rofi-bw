@@ -5,5 +5,5 @@ The files here come directly from:
 
 When adding new files, make sure to also update:
 
-- `plugin/src/icons/resources.rs`
+- `plugin/src/icons/cards.rs`
 - `plugin/src/icons/font.rs`
