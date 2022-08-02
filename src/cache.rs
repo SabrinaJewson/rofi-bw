@@ -177,7 +177,7 @@ use aead::NewAead;
 use anyhow::Context as _;
 use argon2::Argon2;
 use chacha20poly1305::XChaCha20Poly1305;
-use rofi_bw_common::fs;
+use rofi_bw_util::fs;
 use std::fmt;
 use std::fmt::Display;
 use std::fmt::Formatter;

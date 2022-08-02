@@ -193,7 +193,7 @@ use crate::CairoImageData;
 use crate::DiskCache;
 use anyhow::Context as _;
 use directories::ProjectDirs;
-use rofi_bw_common::fs;
+use rofi_bw_util::fs;
 use rofi_mode::cairo;
 use std::collections::HashMap;
 use std::io::BufReader;

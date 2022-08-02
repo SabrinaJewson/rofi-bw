@@ -212,8 +212,8 @@ fn bincode_config() -> impl bincode::config::Config {
 use crate::config::AutoLock;
 use anyhow::anyhow;
 use anyhow::Context as _;
-use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
+use rofi_bw_util::fs;
 use std::io;
 use std::io::Read;
 use std::io::Write;

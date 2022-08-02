@@ -1,0 +1,9 @@
+[package]
+name = "rofi-bw-util"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+memchr = "2.5.0"
+rand = "0.8.5"

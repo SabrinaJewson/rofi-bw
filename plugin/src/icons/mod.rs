@@ -93,6 +93,6 @@ mod font;
 
 use crate::SyncWrapper;
 use anyhow::Context as _;
-use rofi_bw_common::fs;
+use rofi_bw_util::fs;
 use rofi_mode::cairo;
 use std::sync::Arc;

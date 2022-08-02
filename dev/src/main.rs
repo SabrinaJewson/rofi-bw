@@ -61,15 +61,13 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
 
     let build_dir = Path::new("build");
     let lib_dir = build_dir.join("lib");
-    fs::create_dir_all(&*lib_dir).context("failed to create lib dir")?;
+    fs::create_dir_all(&*lib_dir)?;
     fs::rename(
-        target_base.join("librofi_bw_plugin.so"),
-        lib_dir.join("plugin.so"),
-    )
-    .context("failed to move plugin file")?;
+        &*target_base.join("librofi_bw_plugin.so"),
+        &*lib_dir.join("plugin.so"),
+    )?;
 
-    fs::rename(target_base.join("rofi-bw"), build_dir.join("rofi-bw"))
-        .context("failed to move executable")?;
+    fs::rename(&*target_base.join("rofi-bw"), &*build_dir.join("rofi-bw"))?;
 
     Ok(())
 }
@@ -102,9 +100,9 @@ fn run(args: RunArgs) -> anyhow::Result<()> {
 
 use anyhow::Context as _;
 use clap::Parser as _;
+use rofi_bw_util::fs;
 use std::env;
 use std::ffi::OsString;
-use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;

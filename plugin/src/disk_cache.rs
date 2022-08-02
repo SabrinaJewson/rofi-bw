@@ -74,7 +74,7 @@ impl<Dir: Borrow<fs::Path>> DiskCache<Dir> {
 }
 
 use anyhow::Context as _;
-use rofi_bw_common::fs;
+use rofi_bw_util::fs;
 use std::borrow::Borrow;
 use std::io;
 use std::time::Duration;

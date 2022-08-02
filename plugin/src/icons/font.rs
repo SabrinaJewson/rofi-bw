@@ -202,5 +202,5 @@ mod cairo_font_face_from_freetype {
 }
 
 use anyhow::Context as _;
-use rofi_bw_common::fs;
+use rofi_bw_util::fs;
 use rofi_mode::cairo;

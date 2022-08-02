@@ -544,6 +544,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap 3.2.14",
+ "rofi-bw-util",
 ]
 
 [[package]]
@@ -1670,6 +1671,7 @@ dependencies = [
  "pbkdf2",
  "rand",
  "rofi-bw-common",
+ "rofi-bw-util",
  "serde",
  "serde_json",
  "sha2",
@@ -1684,8 +1686,6 @@ name = "rofi-bw-common"
 version = "0.0.0"
 dependencies = [
  "bincode",
- "memchr",
- "rand",
  "subtle",
  "zeroize",
 ]
@@ -1714,6 +1714,7 @@ dependencies = [
  "rayon",
  "reqwest",
  "rofi-bw-common",
+ "rofi-bw-util",
  "rofi-mode",
  "rust_icu_common",
  "rust_icu_sys",
@@ -1725,6 +1726,14 @@ dependencies = [
  "url",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "rofi-bw-util"
+version = "0.0.0"
+dependencies = [
+ "memchr",
+ "rand",
 ]
 
 [[package]]

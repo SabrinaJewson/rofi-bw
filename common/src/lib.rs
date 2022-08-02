@@ -239,5 +239,3 @@ pub enum CipherType {
     Card = 2,
     Identity = 3,
 }
-
-pub mod fs;

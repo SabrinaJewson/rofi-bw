@@ -131,9 +131,9 @@ fn syscall_result(res: c_int) -> io::Result<c_int> {
 
 use crate::config;
 use anyhow::Context as _;
-use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
+use rofi_bw_util::fs;
 use std::io;
 use std::io::BufReader;
 use std::io::BufWriter;

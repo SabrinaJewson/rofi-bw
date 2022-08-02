@@ -329,6 +329,6 @@ mod serde_default {
 
 use crate::auth;
 use anyhow::Context as _;
-use rofi_bw_common::fs;
+use rofi_bw_util::fs;
 use serde::Deserialize;
 use std::io;
