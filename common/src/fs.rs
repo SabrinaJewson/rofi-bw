@@ -73,9 +73,17 @@ pub mod path {
                 unsafe { Box::from_raw(ptr as *mut Self) }
             }
             #[must_use]
+            pub fn from_arc_os_str(s: Arc<OsStr>) -> Arc<Self> {
+                let ptr = Arc::into_raw(s);
+                unsafe { Arc::from_raw(ptr as *const Self) }
+            }
+            #[must_use]
+            pub fn to_boxed(&self) -> Box<Self> {
+                Self::from_boxed_os_str(self.0.into())
+            }
+            #[must_use]
             pub fn to_arc(&self) -> Arc<Self> {
-                let arc_ptr: *const OsStr = Arc::into_raw(Arc::from(&self.0));
-                unsafe { Arc::from_raw(arc_ptr as *const Self) }
+                Self::from_arc_os_str(self.0.into())
             }
             #[must_use]
             pub fn from_env_var<Key: AsRef<OsStr>>(key: Key) -> Option<Box<Self>> {
@@ -114,6 +122,12 @@ pub mod path {
                     remaining
                 };
                 Some(fs::Path::new(OsStr::from_bytes(bytes)))
+            }
+        }
+
+        impl AsRef<OsStr> for List {
+            fn as_ref(&self) -> &OsStr {
+                &self.0
             }
         }
 

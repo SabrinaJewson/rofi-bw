@@ -1,5 +1,5 @@
 pub(crate) fn run(
-    lib_dir: &OsStr,
+    lib_dir: &fs::path::List,
     handshake: &ipc::Handshake<&MasterKey, &[u8], &ipc::View>,
     rofi_options: &config::RofiOptions,
     display: &str,
@@ -131,9 +131,9 @@ fn syscall_result(res: c_int) -> io::Result<c_int> {
 
 use crate::config;
 use anyhow::Context as _;
+use rofi_bw_common::fs;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
-use std::ffi::OsStr;
 use std::io;
 use std::io::BufReader;
 use std::io::BufWriter;

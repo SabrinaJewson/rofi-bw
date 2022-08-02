@@ -122,8 +122,10 @@ fn try_main(args: Args) -> anyhow::Result<()> {
         SessionManager::new(&project_dirs, &http, &*client_id, device_type, device_name)?;
 
     let mut menu_opts = MenuOpts {
-        lib_dir: env::var_os("ROFI_BW_LIB_DIR")
-            .unwrap_or_else(|| "/usr/lib/rofi-bw:/usr/local/lib/rofi-bw".into()),
+        lib_dir: match fs::path::List::from_env_var("ROFI_BW_LIB_DIR") {
+            Some(dir) => dir,
+            None => fs::path::List::from_ref("/usr/lib/rofi-bw:/usr/local/lib/rofi-bw").to_boxed(),
+        },
         rofi_options,
         copy_notification,
         clipboard: Clipboard::new().context("failed to open clipboard")?,
@@ -306,7 +308,7 @@ struct AfterMenu<'http, 'client_id> {
 }
 
 struct MenuOpts {
-    lib_dir: OsString,
+    lib_dir: Box<fs::path::List>,
     rofi_options: config::RofiOptions,
     copy_notification: bool,
     clipboard: Clipboard,
@@ -604,6 +606,5 @@ use rofi_bw_common::Keybind;
 use rofi_bw_common::List;
 use std::convert::Infallible;
 use std::env;
-use std::ffi::OsString;
 use std::process;
 use uuid::Uuid;
