@@ -39,7 +39,7 @@
         {
           name: "Make archive",
           shell: "bash",
-          run: "tar cvzf ${{ env.archive_name }} build/lib build/rofi-bw resources install.sh",
+          run: "tar cvzf ${{ env.archive_name }} build install.sh",
         },
         {
           name: "Upload release archive",
