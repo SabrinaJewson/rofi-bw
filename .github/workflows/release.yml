@@ -1,0 +1,48 @@
+{
+  name: "Release",
+  on: { "release": { types: ["published"] } },
+  jobs: {
+    "release": {
+      name: "Release",
+      strategy: {
+        fail-fast: true,
+        matrix: {
+          "target": ["x86_64-unknown-linux-gnu"],
+        },
+      },
+      runs-on: "ubuntu-latest",
+      env: {
+        "archive_name": "rofi-bw-${{ github.ref_name }}-${{ matrix.target }}",
+      },
+      steps: [
+        {
+          name: "Checkout",
+          uses: "actions/checkout@v2",
+        },
+        {
+          name: "Install Rust",
+          uses: "actions-rs/toolchain@v1",
+          with: {
+            toolchain: "stable",
+            profile: "minimal",
+            target: "${{ matrix.target }}",
+          },
+        },
+        {
+          name: "Build",
+          run: "cargo dev build --verbose --release",
+        },
+        {
+          name: "Make archive",
+          shell: "bash",
+          run: "tar cvzf ${{ env.archive_name }} build/lib build/rofi-bw resources install.sh",
+        },
+        {
+          name: "Upload release archive",
+          uses: "softprops/action-gh-release@v1",
+          with: { files: "${{ env.archive_name }}" },
+        },
+      ],
+    },
+  },
+}
