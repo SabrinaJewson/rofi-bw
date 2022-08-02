@@ -30,7 +30,7 @@
         },
         {
           name: "Build",
-          run: "cargo dev build --verbose --release",
+          run: "cargo dev build --release",
         },
         {
           name: "Make archive",
