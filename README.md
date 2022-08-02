@@ -203,8 +203,11 @@ click_to_exit = false
 
 ## Installation
 
-Runtime dependencies:
+Dependencies:
+- Cairo
 - dbus libs
+- ICU
+- Pango
 - Rofi
 
 This below instructions will install into `/usr/local` by default;
