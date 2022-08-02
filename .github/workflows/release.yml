@@ -12,7 +12,7 @@
       },
       runs-on: "ubuntu-latest",
       env: {
-        "archive_name": "rofi-bw-${{ github.ref_name }}-${{ matrix.target }}",
+        "archive_name": "rofi-bw-${{ github.ref_name }}-${{ matrix.target }}.tar.gz",
       },
       steps: [
         {
