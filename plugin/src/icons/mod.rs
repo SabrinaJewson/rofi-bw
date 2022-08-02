@@ -12,7 +12,8 @@ struct Inner {
 
 impl Icons {
     pub(crate) fn new() -> anyhow::Result<Self> {
-        let resource_dirs = match fs::path::List::from_env_var("ROFI_BW_RESOURCES_DIR") {
+        // TODO: This doesn’t append `rofi-bw` to the end
+        let resource_dirs = match fs::path::List::from_env_var("XDG_DATA_DIRS") {
             Some(dynamic) => dynamic.to_arc(),
             None => fs::path::List::from_ref("/usr/local/share/:/usr/share/").to_arc(),
         };
