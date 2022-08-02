@@ -6,12 +6,12 @@ pub(crate) struct Font {
 }
 
 impl Font {
-    pub(crate) fn new(resource_dirs: &fs::path::List) -> anyhow::Result<Self> {
+    pub(crate) fn new(data_dirs: &fs::path::List) -> anyhow::Result<Self> {
         let library = freetype::Library::init().context("failed to initialize FreeType")?;
 
         let mut freetype_face = None;
-        for resource_dir in resource_dirs {
-            let path = resource_dir.join("bwi-font.ttf");
+        for data_dir in data_dirs {
+            let path = data_dir.join("rofi-bw/bwi-font.ttf");
             match library.new_face(&*path, 0) {
                 Ok(loaded_face) => {
                     freetype_face = Some(loaded_face);

@@ -57,7 +57,7 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
 
     anyhow::ensure!(status.success(), "Cargo failed");
 
-    let target_base = PathBuf::from_iter(["build", "target", profile_dir_name]);
+    let target_base = PathBuf::from_iter(["target", profile_dir_name]);
 
     let build_dir = Path::new("build");
     let lib_dir = build_dir.join("lib");

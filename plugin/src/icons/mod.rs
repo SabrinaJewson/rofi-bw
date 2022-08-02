@@ -7,13 +7,12 @@ struct Inner {
     cards: Cards,
     font: Font,
     runtime: tokio::runtime::Runtime,
-    resource_dirs: Arc<fs::path::List>,
+    data_dirs: Arc<fs::path::List>,
 }
 
 impl Icons {
     pub(crate) fn new() -> anyhow::Result<Self> {
-        // TODO: This doesn’t append `rofi-bw` to the end
-        let resource_dirs = match fs::path::List::from_env_var("XDG_DATA_DIRS") {
+        let data_dirs = match fs::path::List::from_env_var("XDG_DATA_DIRS") {
             Some(dynamic) => dynamic.to_arc(),
             None => fs::path::List::from_ref("/usr/local/share/:/usr/share/").to_arc(),
         };
@@ -21,9 +20,9 @@ impl Icons {
         Ok(Self(SyncWrapper::new(Inner {
             bitwarden: Bitwarden::new()?,
             cards: Cards::new(),
-            font: Font::new(&resource_dirs)?,
+            font: Font::new(&data_dirs)?,
             runtime: tokio::runtime::Runtime::new().context("failed to start Tokio runtime")?,
-            resource_dirs,
+            data_dirs,
         })))
     }
 
@@ -32,7 +31,7 @@ impl Icons {
         let _runtime_context = this.runtime.enter();
         match icon {
             Icon::Host(host) => this.bitwarden.start_fetch(host.clone()),
-            &Icon::Card(card) => this.cards.start_fetch(&this.resource_dirs, card),
+            &Icon::Card(card) => this.cards.start_fetch(&this.data_dirs, card),
             Icon::Glyph(_) => {}
         }
     }

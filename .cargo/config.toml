@@ -1,5 +1,2 @@
-[build]
-target-dir = "build/target"
-
 [alias]
 dev = "run -p dev --"

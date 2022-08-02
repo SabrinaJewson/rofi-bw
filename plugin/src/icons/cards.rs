@@ -16,18 +16,19 @@ impl Cards {
         }
     }
 
-    pub(crate) fn start_fetch(&mut self, dirs: &Arc<fs::path::List>, card: Card) {
+    pub(crate) fn start_fetch(&mut self, data_dirs: &Arc<fs::path::List>, card: Card) {
         if self.icons[card as usize].is_some() {
             return;
         }
 
-        let dirs = dirs.clone();
+        let data_dirs = data_dirs.clone();
         let handle = tokio::task::spawn_blocking(move || {
             let file_name = card.file_name();
 
             let mut file = None;
-            for dir in &*dirs {
-                let path = dir.join(file_name);
+            for data_dir in &*data_dirs {
+                let mut path = data_dir.join("rofi-bw");
+                path.push(file_name);
                 match fs::file::open::read_only(path) {
                     Ok(opened_file) => {
                         file = Some(opened_file);
