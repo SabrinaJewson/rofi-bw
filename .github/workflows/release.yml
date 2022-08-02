@@ -30,13 +30,13 @@
         },
         {
           name: "Install packages",
-          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libicu66 libpango1.0-dev",
+          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libpango1.0-dev",
         },
         {
           name: "Build",
           # Statically link against ICU because it has frequently changing version numbers
           env: {
-            "RUSTFLAGS": "-Lnative=/usr/lib -lstatic=icui18n -lstatic=icuuc -lstatic=icudata -lstatic=stdc++",
+            "RUSTFLAGS": "-L/usr/lib/x86_64-linux-gnu -lstatic=icui18n -lstatic=icuuc -lstatic=icudata -lstatic=stdc++",
           },
           run: "cargo dev build --release",
         },
