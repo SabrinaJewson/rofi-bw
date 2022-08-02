@@ -1763,8 +1763,7 @@ dependencies = [
 [[package]]
 name = "rust_icu_common"
 version = "2.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b08406df3a1168150c8bac41ce90691b8957a3f6759676f296e3e85caa840d82"
+source = "git+https://github.com/SabrinaJewson/rust_icu?branch=static#22da9be0c1a1489197389b3633f4cfe0e9757807"
 dependencies = [
  "anyhow",
  "rust_icu_sys",
@@ -1774,8 +1773,7 @@ dependencies = [
 [[package]]
 name = "rust_icu_sys"
 version = "2.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "934d041adaf09531e60b8dd254087f3a80f1557e08d21a95640840f48bee4652"
+source = "git+https://github.com/SabrinaJewson/rust_icu?branch=static#22da9be0c1a1489197389b3633f4cfe0e9757807"
 dependencies = [
  "anyhow",
  "bindgen",
