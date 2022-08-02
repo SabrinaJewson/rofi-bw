@@ -214,7 +214,7 @@ mod get_pipe {
     pub(crate) fn get_pipe() -> anyhow::Result<UnixStream> {
         inner().context(
             "\
-            failed to read pipe fd from environment;\
+            failed to read pipe fd from environment; \
             are you running inside rofi-bw?\
         ",
         )
