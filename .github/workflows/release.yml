@@ -29,6 +29,10 @@
           },
         },
         {
+          name: "Install dbus",
+          run: "sudo apt install libdbus-1-dev",
+        },
+        {
           name: "Build",
           run: "cargo dev build --release",
         },
