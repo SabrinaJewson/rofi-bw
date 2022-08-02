@@ -10,7 +10,7 @@
           "target": ["x86_64-unknown-linux-gnu"],
         },
       },
-      runs-on: "ubuntu-22.04",
+      runs-on: "ubuntu-latest",
       env: {
         "archive_name": "rofi-bw-${{ github.ref_name }}-${{ matrix.target }}.tar.gz",
       },
@@ -30,13 +30,13 @@
         },
         {
           name: "Install packages",
-          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libpango1.0-dev",
+          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libicu70 libpango1.0-dev",
         },
         {
           name: "Build",
           # Statically link against ICU because it has frequently changing version numbers
           env: {
-            "RUSTFLAGS": "-L/usr/lib -lstatic=icui18n -lstatic=icuuc -lstatic=icudata -lstatic=stdc++",
+            "RUSTFLAGS": "-Lnative=/usr/lib -lstatic=icui18n -lstatic=icuuc -lstatic=icudata -lstatic=stdc++",
           },
           run: "cargo dev build --release",
         },
