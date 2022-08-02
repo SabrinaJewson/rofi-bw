@@ -1684,6 +1684,7 @@ name = "rofi-bw-common"
 version = "0.0.0"
 dependencies = [
  "bincode",
+ "memchr",
  "rand",
  "subtle",
  "zeroize",
@@ -1708,7 +1709,6 @@ dependencies = [
  "hkdf",
  "hmac",
  "image",
- "memchr",
  "paste",
  "rand",
  "rayon",

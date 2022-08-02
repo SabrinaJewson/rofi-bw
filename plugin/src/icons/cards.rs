@@ -16,7 +16,7 @@ impl Cards {
         }
     }
 
-    pub(crate) fn start_fetch(&mut self, dirs: &ResourceDirs, card: Card) {
+    pub(crate) fn start_fetch(&mut self, dirs: &Arc<fs::path::List>, card: Card) {
         if self.icons[card as usize].is_some() {
             return;
         }
@@ -26,7 +26,7 @@ impl Cards {
             let file_name = card.file_name();
 
             let mut file = None;
-            for dir in &dirs {
+            for dir in &*dirs {
                 let path = dir.join(file_name);
                 match fs::file::open::read_only(path) {
                     Ok(opened_file) => {
@@ -170,9 +170,9 @@ impl Card {
 
 use crate::poll_future_once;
 use crate::CairoImageData;
-use crate::ResourceDirs;
 use anyhow::Context as _;
 use rofi_bw_common::fs;
 use rofi_mode::cairo;
 use std::io;
 use std::io::BufReader;
+use std::sync::Arc;

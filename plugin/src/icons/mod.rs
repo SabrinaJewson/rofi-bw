@@ -7,12 +7,16 @@ struct Inner {
     cards: Cards,
     font: Font,
     runtime: tokio::runtime::Runtime,
-    resource_dirs: ResourceDirs,
+    resource_dirs: Arc<fs::path::List>,
 }
 
 impl Icons {
     pub(crate) fn new() -> anyhow::Result<Self> {
-        let resource_dirs = ResourceDirs::from_env();
+        let resource_dirs = match fs::path::List::from_env_var("ROFI_BW_RESOURCES_DIR") {
+            Some(dynamic) => dynamic.to_arc(),
+            None => fs::path::List::from_ref("/usr/local/share/:/usr/share/").to_arc(),
+        };
+
         Ok(Self(SyncWrapper::new(Inner {
             bitwarden: Bitwarden::new()?,
             cards: Cards::new(),
@@ -87,7 +91,6 @@ use font::Font;
 pub(crate) use font::Glyph;
 mod font;
 
-use crate::ResourceDirs;
 use crate::SyncWrapper;
 use anyhow::Context as _;
 use rofi_bw_common::fs;

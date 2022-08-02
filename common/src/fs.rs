@@ -53,6 +53,105 @@ pub mod path {
         use std::fmt::Display;
         use std::fmt::Formatter;
     }
+
+    pub use list::List;
+    pub mod list {
+        /// Colon-separated path list.
+        #[derive(Debug)]
+        #[repr(transparent)]
+        pub struct List(OsStr);
+
+        impl List {
+            #[must_use]
+            pub fn from_ref<S: ?Sized + AsRef<OsStr>>(s: &S) -> &Self {
+                let ptr: *const OsStr = s.as_ref();
+                unsafe { &*(ptr as *const Self) }
+            }
+            #[must_use]
+            pub fn from_boxed_os_str(s: Box<OsStr>) -> Box<Self> {
+                let ptr = Box::into_raw(s);
+                unsafe { Box::from_raw(ptr as *mut Self) }
+            }
+            #[must_use]
+            pub fn to_arc(&self) -> Arc<Self> {
+                let arc_ptr: *const OsStr = Arc::into_raw(Arc::from(&self.0));
+                unsafe { Arc::from_raw(arc_ptr as *const Self) }
+            }
+            #[must_use]
+            pub fn from_env_var<Key: AsRef<OsStr>>(key: Key) -> Option<Box<Self>> {
+                env::var_os(key).map(|value| Self::from_boxed_os_str(value.into_boxed_os_str()))
+            }
+            #[must_use]
+            pub fn iter(&self) -> Iter<'_> {
+                Iter(self.0.as_bytes())
+            }
+        }
+
+        impl<'list> IntoIterator for &'list List {
+            type Item = &'list fs::Path;
+            type IntoIter = Iter<'list>;
+            fn into_iter(self) -> Self::IntoIter {
+                self.iter()
+            }
+        }
+
+        pub struct Iter<'list>(&'list [u8]);
+
+        impl<'list> Iterator for Iter<'list> {
+            type Item = &'list fs::Path;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.0.is_empty() {
+                    return None;
+                }
+
+                let remaining = self.0;
+                let bytes = if let Some(colon) = memchr(b':', remaining) {
+                    self.0 = &remaining[colon + 1..];
+                    &remaining[..colon]
+                } else {
+                    self.0 = &[];
+                    remaining
+                };
+                Some(fs::Path::new(OsStr::from_bytes(bytes)))
+            }
+        }
+
+        #[cfg(test)]
+        mod tests {
+            #[test]
+            fn iteration() {
+                let dirs = fs::path::List::from_ref("foo:bar:baz");
+                let dirs = dirs
+                    .iter()
+                    .map(|path| path.as_os_str().as_bytes())
+                    .collect::<Vec<_>>();
+                let expected: [&[u8]; 3] = [b"foo", b"bar", b"baz"];
+                assert_eq!(dirs, expected);
+            }
+
+            #[test]
+            fn colon_at_end() {
+                let dirs = fs::path::List::from_ref("foo:bar:baz:");
+                let dirs = dirs
+                    .iter()
+                    .map(|path| path.as_os_str().as_bytes())
+                    .collect::<Vec<_>>();
+                let expected: [&[u8]; 3] = [b"foo", b"bar", b"baz"];
+                assert_eq!(dirs, expected);
+            }
+
+            use crate::fs;
+            use std::os::unix::ffi::OsStrExt as _;
+        }
+
+        use crate::fs;
+        use memchr::memchr;
+        use std::env;
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt as _;
+        use std::sync::Arc;
+    }
 }
 
 pub use create_dir_all::create_dir_all;

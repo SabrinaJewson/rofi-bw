@@ -6,7 +6,7 @@ pub(crate) struct Font {
 }
 
 impl Font {
-    pub(crate) fn new(resource_dirs: &ResourceDirs) -> anyhow::Result<Self> {
+    pub(crate) fn new(resource_dirs: &fs::path::List) -> anyhow::Result<Self> {
         let library = freetype::Library::init().context("failed to initialize FreeType")?;
 
         let mut freetype_face = None;
@@ -201,6 +201,6 @@ mod cairo_font_face_from_freetype {
     use std::rc::Rc;
 }
 
-use crate::resource_dirs::ResourceDirs;
 use anyhow::Context as _;
+use rofi_bw_common::fs;
 use rofi_mode::cairo;

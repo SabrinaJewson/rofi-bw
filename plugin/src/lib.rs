@@ -289,9 +289,6 @@ mod cipher_string;
 use symmetric_key::SymmetricKey;
 mod symmetric_key;
 
-use resource_dirs::ResourceDirs;
-mod resource_dirs;
-
 use base64_decode_array::base64_decode_array;
 mod base64_decode_array;
 
