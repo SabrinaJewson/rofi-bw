@@ -29,8 +29,8 @@
           },
         },
         {
-          name: "Install dbus",
-          run: "sudo apt install libdbus-1-dev",
+          name: "Install packages",
+          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libpango1.0-dev",
         },
         {
           name: "Build",
