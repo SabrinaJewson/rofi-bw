@@ -30,7 +30,7 @@
         },
         {
           name: "Install packages",
-          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libicu70 libpango1.0-dev",
+          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libicu66 libpango1.0-dev",
         },
         {
           name: "Build",
