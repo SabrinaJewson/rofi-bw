@@ -30,12 +30,11 @@
             "CFLAGS": "-fPIC",
             "configure_args": "--with-data-packaging=archive --enable-static --disable-shared --disable-tests",
           },
-          run: |
-            mkdir icu-build
-            cd icu-build
-            ../icu/icu4c/source/runConfigureICU ${{ env.configure_args }} Linux
-            make
-            sudo make install
+          run: "mkdir icu-build && cd icu-build && ../icu/icu4v/source/runConfigureICU ${{ env.configure_args }} Linux",
+        },
+        {
+          name: "Build ICU",
+          run: "cd icu-build && make && sudo make install",
         },
         {
           name: "Checkout",
