@@ -203,12 +203,32 @@ click_to_exit = false
 
 ## Installation
 
-Dependencies:
+Runtime dependencies:
 - Cairo
 - dbus libs
-- ICU
 - Pango
 - Rofi
+
+### From prebuilt binaries
+
+Head to the [releases](https://github.com/SabrinaJewson/rofi-bw/releases) page
+and download the latest release as a `.tar.gz`.
+One extracted, you can run `sudo ./install.sh`
+and rofi-bw will be installed into `/usr/local` on your system.
+
+Note that rofi-bw installed in this way expects ICU data to be present on the system,
+and you need to specify its path via the `ICU_DATA` environment variable.
+Therefore I recommend defining a wrapper script at `~/.local/bin/rofi-bw`:
+
+```sh
+#!/bin/sh
+ICU_DATA=/usr/share/icu/71.1 exec /usr/local/bin/rofi-bw "$@"
+```
+
+### From source
+
+Build-time dependencies (in addition to runtime ones):
+- ICU
 
 This below instructions will install into `/usr/local` by default;
 you can edit `install.sh` to change this.
