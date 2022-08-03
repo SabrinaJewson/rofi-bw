@@ -15,9 +15,31 @@
         "archive_name": "rofi-bw-${{ github.ref_name }}-${{ matrix.target }}.tar.gz",
       },
       steps: [
+        # We need to build ICU from source because Ubuntu doesn’t compile it with -fPIC
+        {
+          name: "Checkout ICU",
+          uses: "actions/checkout@v3",
+          with: {
+            repository: "unicode-org/icu",
+            path: "icu",
+          },
+        },
+        {
+          name: "Build ICU",
+          env: {
+            "CFLAGS": "-fPIC",
+            "configure_args": "--with-data-packaging=archive --enable-static --disable-shared --disable-tests",
+          },
+          run: |
+            mkdir icu-build
+            cd icu-build
+            ../icu/icu4c/source/runConfigureICU ${{ env.configure_args }} Linux
+            make
+            sudo make install
+        },
         {
           name: "Checkout",
-          uses: "actions/checkout@v2",
+          uses: "actions/checkout@v3",
         },
         {
           name: "Install Rust",
@@ -30,7 +52,7 @@
         },
         {
           name: "Install packages",
-          run: "sudo apt install libcairo2-dev libdbus-1-dev libicu-dev libpango1.0-dev llvm",
+          run: "sudo apt install libcairo2-dev libdbus-1-dev libpango1.0-dev llvm",
         },
         {
           name: "Build",
@@ -39,7 +61,6 @@
         },
         {
           name: "Make archive",
-          shell: "bash",
           run: "tar cvzf ${{ env.archive_name }} build install.sh",
         },
         {
