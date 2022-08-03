@@ -21,6 +21,7 @@
           uses: "actions/checkout@v3",
           with: {
             repository: "unicode-org/icu",
+            ref: "release-71-1",
             path: "icu",
           },
         },
@@ -28,6 +29,7 @@
           name: "Configure ICU",
           env: {
             "CFLAGS": "-fPIC",
+            "CXXFLAGS": "-fPIC",
             "configure_args": "--with-data-packaging=archive --enable-static --disable-shared --disable-tests",
           },
           run: "mkdir icu-build && cd icu-build && ../icu/icu4c/source/runConfigureICU Linux ${{ env.configure_args }}",
