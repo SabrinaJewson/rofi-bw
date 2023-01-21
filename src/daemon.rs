@@ -27,7 +27,7 @@ pub(crate) fn invoke(runtime_dir: &fs::Path, request: &Request) -> anyhow::Resul
 }
 
 fn invoke_inner(runtime_dir: &fs::Path, request: &Request) -> anyhow::Result<bool> {
-    let socket_path = runtime_dir.join(SOCKET_FILE_NAME);
+    let socket_path = runtime_dir.join(socket_file_name());
 
     let acceptable_errors = [io::ErrorKind::NotFound, io::ErrorKind::ConnectionRefused];
     let mut socket = match UnixStream::connect(socket_path) {
@@ -82,7 +82,7 @@ enum State {
 
 impl Daemon {
     pub(crate) fn bind(runtime_dir: &fs::Path, auto_lock: AutoLock) -> anyhow::Result<Self> {
-        let socket_path = runtime_dir.join(SOCKET_FILE_NAME);
+        let socket_path = runtime_dir.join(socket_file_name());
 
         drop(fs::create_dir_all(runtime_dir));
         drop(std::fs::remove_file(&*socket_path));
@@ -203,7 +203,14 @@ fn handle_connection_inner(shared: Arc<Shared>, mut connection: UnixStream) -> O
     Some(())
 }
 
-const SOCKET_FILE_NAME: &str = "rofi-bw-session";
+fn socket_file_name() -> String {
+    let argv0 = env::args_os().next();
+    let base = argv0
+        .as_ref()
+        .and_then(|path| fs::Path::new(path).file_name())
+        .unwrap_or_else(|| OsStr::new("rofi-bw"));
+    format!("{}-session", base.to_string_lossy())
+}
 
 fn bincode_config() -> impl bincode::config::Config {
     bincode::config::standard()
@@ -214,6 +221,8 @@ use anyhow::anyhow;
 use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_bw_util::fs;
+use std::env;
+use std::ffi::OsStr;
 use std::io;
 use std::io::Read;
 use std::io::Write;

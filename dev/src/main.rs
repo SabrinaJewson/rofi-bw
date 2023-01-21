@@ -65,7 +65,7 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
     )?;
     copy_p(
         &target_base.join("rofi-bw"),
-        fs::Path::new("build/bin/rofi-bw"),
+        fs::Path::new("build/bin/rofi-bw-dev"),
     )?;
     copy_p(
         fs::Path::new("resources/bwi-font.ttf"),
@@ -92,9 +92,11 @@ struct RunArgs {
 }
 
 fn run(args: RunArgs) -> anyhow::Result<()> {
-    build(args.build_args)?;
+    if let Err(e) = build(args.build_args) {
+        eprintln!("Warning: failed to build: {e:?}");
+    }
 
-    let status = process::Command::new(fs::Path::new("build/bin/rofi-bw"))
+    let status = process::Command::new(fs::Path::new("build/bin/rofi-bw-dev"))
         .env("ROFI_BW_LIB_DIR", fs::Path::new("build/lib/rofi-bw"))
         // Put a path that will always fail at start for extra testing
         .env("XDG_DATA_DIRS", "doesnt-exist:build/share")
