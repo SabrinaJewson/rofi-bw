@@ -354,12 +354,13 @@ fn process_ciphers(
         .map(|_| Cipher::safe_uninit())
         .collect::<Box<[_]>>();
 
-    parallel_try_fill(
-        ciphers
-            .into_par_iter()
-            .map(|cipher| process_cipher(cipher, key)),
-        &mut processed,
-    )?;
+    ciphers
+        .into_par_iter()
+        .zip_eq(&mut *processed)
+        .try_for_each(|(cipher, out)| {
+            *out = process_cipher(cipher, key)?;
+            anyhow::Ok(())
+        })?;
 
     try_sort::unstable_by(&mut processed, |a, b| -> anyhow::Result<_> {
         Ok(collator
@@ -1099,13 +1100,13 @@ use crate::data;
 use crate::data::CipherData;
 use crate::data::Data;
 use crate::icons;
-use crate::parallel_try_fill;
 use crate::Icon;
 use crate::Icons;
 use crate::SymmetricKey;
 use anyhow::Context as _;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
+use rayon::prelude::IndexedParallelIterator;
 use rofi_bw_common::ipc;
 use rofi_bw_common::menu_keybinds::Navigate;
 use rofi_bw_common::CipherType;
