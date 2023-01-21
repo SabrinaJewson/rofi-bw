@@ -179,22 +179,21 @@ pub mod menu_keybinds {
         },
     ];
 
-    /// Keybinds that work with a connection to `rofi-bw` but don't need the data to be loaded.
+    /// Keybinds rows that work with a connection to `rofi-bw` but don't need the data to be loaded.
     #[must_use]
-    pub fn no_data() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[0..3]
+    pub fn no_data() -> [&'static [Keybind<Action>]; 1] {
+        [&MENU_KEYBINDS[0..3]]
     }
 
-    /// Keybinds that select a category (e.g. all, trash) to be shown.
+    /// Keybinds that require the data to be loaded.
     #[must_use]
-    pub fn categories() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[3..8]
-    }
-
-    /// Keybinds that select a specific type bucket to be shown.
-    #[must_use]
-    pub fn type_buckets() -> &'static [Keybind<Action>] {
-        &MENU_KEYBINDS[8..]
+    pub fn with_data() -> [&'static [Keybind<Action>]; 2] {
+        [
+            // Keybinds that select a category (e.g. all, trash) to be shown.
+            &MENU_KEYBINDS[3..8],
+            // Keybinds that select a specific type bucket to be shown.
+            &MENU_KEYBINDS[8..],
+        ]
     }
 
     use crate::CipherType;

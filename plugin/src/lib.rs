@@ -185,10 +185,11 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         let mut message = rofi_mode::String::new();
 
         if self.pipe.is_some() {
-            writeln!(message, "{}", keybind::HelpMarkup(menu_keybinds::no_data())).unwrap();
-
+            for binds in menu_keybinds::no_data() {
+                writeln!(message, "{}", keybind::HelpMarkup(binds)).unwrap();
+            }
             if self.initialized_mut().is_some() {
-                for binds in [menu_keybinds::categories(), menu_keybinds::type_buckets()] {
+                for binds in menu_keybinds::with_data() {
                     writeln!(message, "{}", keybind::HelpMarkup(binds)).unwrap();
                 }
             }
