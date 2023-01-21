@@ -196,14 +196,10 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
         let mut message = rofi_mode::String::new();
 
         if self.pipe.is_some() {
-            for binds in menu_keybinds::no_data() {
-                writeln!(message, "{}", keybind::HelpMarkup(binds)).unwrap();
-            }
-            if self.initialized_mut().is_some() {
-                for binds in menu_keybinds::with_data() {
-                    writeln!(message, "{}", keybind::HelpMarkup(binds)).unwrap();
-                }
-            }
+            let history = self.initialized_mut().map(|i| i.history());
+            menu_keybinds::keybinds_ui(history, |row| {
+                writeln!(message, "{}", keybind::HelpMarkup(row)).unwrap();
+            });
         }
 
         writeln!(message).unwrap();

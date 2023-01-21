@@ -43,6 +43,14 @@ pub mod history {
         pub fn forward(&mut self) {
             self.current = (self.current + 1).min(self.stack.len() - 1);
         }
+        #[must_use]
+        pub fn can_go_back(&self) -> bool {
+            self.current != 0
+        }
+        #[must_use]
+        pub fn can_go_forward(&self) -> bool {
+            self.current < self.stack.len() - 1
+        }
         pub fn map<U, F: FnMut(T) -> U>(self, f: F) -> History<U> {
             History {
                 stack: self.stack.into_iter().map(f).collect(),

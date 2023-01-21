@@ -168,6 +168,10 @@ impl Initialized {
         }
     }
 
+    pub(crate) fn history(&self) -> &History<impl PartialEq> {
+        &self.state.history
+    }
+
     pub(crate) fn ipc_state(&self) -> History<ipc::View> {
         self.state.history.ref_map(|view| match *view {
             View::List(list) => ipc::View::List(list),

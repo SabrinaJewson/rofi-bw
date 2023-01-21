@@ -196,28 +196,32 @@ pub mod menu_keybinds {
         },
     ];
 
-    /// Keybinds rows that work with a connection to `rofi-bw` but don't need the data to be loaded.
-    #[must_use]
-    pub fn no_data() -> [&'static [Keybind<Action>]; 1] {
-        [&MENU_KEYBINDS[0..3]]
-    }
-
-    /// Keybinds that require the data to be loaded.
-    #[must_use]
-    pub fn with_data() -> [&'static [Keybind<Action>]; 3] {
-        [
+    /// Call the given callback with each row of keybinds to display.
+    pub fn keybinds_ui<F: FnMut(&'static [Keybind<Action>]), HistoryItem: PartialEq>(
+        history: Option<&History<HistoryItem>>,
+        mut f: F,
+    ) {
+        f(&MENU_KEYBINDS[0..3]);
+        // If the history isn’t `Some`, the menu hasn’t initialized.
+        if let Some(history) = history {
             // Keybinds that select a category (e.g. all, trash) to be shown.
-            &MENU_KEYBINDS[3..8],
+            f(&MENU_KEYBINDS[3..8]);
             // Keybinds that select a specific type bucket to be shown.
-            &MENU_KEYBINDS[8..12],
+            f(&MENU_KEYBINDS[8..12]);
             // Back and forward keybinds
-            &MENU_KEYBINDS[12..14],
-        ]
+            match (history.can_go_back(), history.can_go_forward()) {
+                (false, false) => {}
+                (false, true) => f(&MENU_KEYBINDS[13..14]),
+                (true, false) => f(&MENU_KEYBINDS[12..13]),
+                (true, true) => f(&MENU_KEYBINDS[12..14]),
+            }
+        }
     }
 
     use crate::CipherType;
     use crate::Keybind;
     use crate::List;
+    use rofi_bw_util::History;
 }
 
 pub use list::List;
