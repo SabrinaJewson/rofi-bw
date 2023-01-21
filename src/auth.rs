@@ -243,7 +243,7 @@ pub(crate) mod login {
         Prelogin(prelogin::Error),
         InvalidCredentials(InvalidCredentials),
         Status(Status),
-        Transport(ureq::Transport),
+        Transport(Box<ureq::Transport>),
         Body(io::Error),
     }
 
@@ -299,7 +299,7 @@ pub(crate) mod login {
                     };
                     ErrorKind::Status(Status { code: status, body })
                 }
-                ureq::Error::Transport(e) => ErrorKind::Transport(e),
+                ureq::Error::Transport(e) => ErrorKind::Transport(Box::new(e)),
             }
         }
     }

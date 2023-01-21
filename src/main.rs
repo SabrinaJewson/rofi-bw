@@ -13,7 +13,8 @@
     clippy::items_after_statements,
     clippy::match_bool,
     clippy::match_wildcard_for_single_variants,
-    clippy::needless_pass_by_value
+    clippy::needless_pass_by_value,
+    clippy::single_match_else
 )]
 
 fn main() -> process::ExitCode {
