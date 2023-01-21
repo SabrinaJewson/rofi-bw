@@ -204,7 +204,7 @@ pub(crate) mod login {
             .post("https://identity.bitwarden.com/connect/token")
             .set(
                 "Auth-Email",
-                &*base64::encode_config(&email, base64::URL_SAFE),
+                &base64::encode_config(email, base64::URL_SAFE),
             )
             .set("Accept", "application/json")
             .set("Device-Type", device_type)

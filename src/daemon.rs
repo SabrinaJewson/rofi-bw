@@ -39,7 +39,7 @@ fn invoke_inner(runtime_dir: &fs::Path, request: &Request) -> anyhow::Result<boo
     let request = bincode::encode_to_vec(request, bincode_config()).unwrap();
 
     socket
-        .write_all(&*request)
+        .write_all(&request)
         .context("failed to send to daemon")?;
 
     socket
@@ -53,7 +53,7 @@ fn invoke_inner(runtime_dir: &fs::Path, request: &Request) -> anyhow::Result<boo
         .read_to_end(&mut response)
         .context("failed to read from daemon")?;
 
-    let (response, _) = bincode::decode_from_slice(&*response, bincode_config())
+    let (response, _) = bincode::decode_from_slice(&response, bincode_config())
         .context("failed to decode daemon response")?;
 
     match response {
@@ -182,7 +182,7 @@ fn handle_connection(shared: Arc<Shared>, connection: UnixStream) {
 fn handle_connection_inner(shared: Arc<Shared>, mut connection: UnixStream) -> Option<()> {
     let mut buf = Vec::with_capacity(64);
     connection.read_to_end(&mut buf).ok()?;
-    let (request, _) = bincode::decode_from_slice(&*buf, bincode_config()).ok()?;
+    let (request, _) = bincode::decode_from_slice(&buf, bincode_config()).ok()?;
 
     let response = {
         let mut state = shared.state.lock().unwrap();
@@ -198,7 +198,7 @@ fn handle_connection_inner(shared: Arc<Shared>, mut connection: UnixStream) -> O
 
     buf.clear();
     bincode::encode_into_std_write(response, &mut buf, bincode_config()).unwrap();
-    connection.write_all(&*buf).ok()?;
+    connection.write_all(&buf).ok()?;
 
     Some(())
 }

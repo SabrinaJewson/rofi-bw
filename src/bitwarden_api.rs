@@ -17,8 +17,8 @@ impl<'http, 'access_token, 'base_url> Client<'http, 'access_token, 'base_url> {
     pub(crate) fn sync(self) -> Result<String, SyncError> {
         let data = self
             .http
-            .get(&*format!("{}/sync?excludeDomains=true", &*self.base_url))
-            .set("Authorization", &*format!("Bearer {}", self.access_token))
+            .get(&format!("{}/sync?excludeDomains=true", &self.base_url))
+            .set("Authorization", &format!("Bearer {}", self.access_token))
             .set("Accept", "application/json")
             .call()?
             .into_string()?;

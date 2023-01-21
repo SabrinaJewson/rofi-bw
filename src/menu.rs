@@ -95,8 +95,7 @@ fn apply_options(rofi: &mut process::Command, rofi_options: &config::RofiOptions
     }
 
     if let Some(matching_negate_char) = &rofi_options.matching_negate_char {
-        rofi.arg("-matching-negate-char")
-            .arg(&*matching_negate_char);
+        rofi.arg("-matching-negate-char").arg(matching_negate_char);
     }
 
     if let Some(theme) = &rofi_options.theme {

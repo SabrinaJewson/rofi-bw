@@ -641,7 +641,7 @@ pub mod overwrite {
         pub fn finish(self) -> Result<(), FinishError> {
             let temp_path = self.temp_file.into_path();
 
-            if let Err(source) = fs::rename(&*temp_path, self.final_path.borrow()) {
+            if let Err(source) = fs::rename(&temp_path, self.final_path.borrow()) {
                 drop(std::fs::remove_file(&*temp_path));
                 return Err(FinishError {
                     path: self.final_path.borrow().into(),
@@ -813,7 +813,7 @@ mod io_error_context {
 
     impl Display for Wrapper {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            f.write_str(&*self.context)
+            f.write_str(&self.context)
         }
     }
 

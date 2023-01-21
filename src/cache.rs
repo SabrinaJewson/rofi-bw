@@ -74,7 +74,7 @@ fn load_inner(dir_path: &fs::Path, key: &Key) -> anyhow::Result<Option<Cache>> {
         .ok()
         .context("decryption failed")?;
 
-    let cache = Reader::parse(&*decrypted, |reader| {
+    let cache = Reader::parse(&decrypted, |reader| {
         let [token_len] = reader.read_array()?;
         let refresh_token = reader.read_utf8(usize::from(token_len))?;
 
@@ -134,7 +134,7 @@ fn store_inner(dir_path: &fs::Path, key: &Key, data: CacheRef<'_, '_>) -> anyhow
         .expect("encryption cannot fail as `Vec`s are infallible");
     res.extend_from_slice(&ciphertext);
 
-    fs::overwrite::with(dir_path.join(CACHE_FILE_NAME), &*res).context("failed to write cache")?;
+    fs::overwrite::with(dir_path.join(CACHE_FILE_NAME), &res).context("failed to write cache")?;
 
     Ok(())
 }

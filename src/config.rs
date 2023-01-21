@@ -3,7 +3,7 @@ pub(crate) fn load(path: &fs::Path) -> anyhow::Result<Config> {
 }
 
 fn load_inner(path: &fs::Path) -> anyhow::Result<Config> {
-    let bytes = match fs::read(&*path) {
+    let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(fs::read::Error {
             kind: fs::read::ErrorKind::Open(e),
@@ -12,7 +12,7 @@ fn load_inner(path: &fs::Path) -> anyhow::Result<Config> {
         Err(e) => return Err(e.into()),
     };
 
-    let config = toml::from_slice::<Config>(&*bytes)
+    let config = toml::from_slice::<Config>(&bytes)
         .with_context(|| format!("{} is invalid", path.display()))?;
 
     Ok(config)

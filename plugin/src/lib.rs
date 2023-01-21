@@ -60,7 +60,7 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                 data,
                 view,
             } = ipc::handshake::read(pipe)?;
-            let data = serde_json::from_slice(&*data).context("failed to read vault data")?;
+            let data = serde_json::from_slice(&data).context("failed to read vault data")?;
             Initialized::new(&master_key, data, view)
         })();
 
@@ -198,7 +198,7 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
 
         match &self.state {
             State::Initialized(initialized) => initialized.status(&mut message),
-            State::Errored(errored) => message.push_str(&**errored),
+            State::Errored(errored) => message.push_str(errored),
         }
 
         while message.ends_with("\n") {

@@ -112,14 +112,14 @@ fn try_main(args: Args) -> anyhow::Result<()> {
         client_id,
         device_type,
         device_name,
-    } = config::load(&*config_path)?;
+    } = config::load(&config_path)?;
 
     let mut daemon = Daemon::bind(runtime_dir, auto_lock)?;
 
     let http = ureq::agent();
 
     let mut session_manager =
-        SessionManager::new(&project_dirs, &http, &*client_id, device_type, device_name)?;
+        SessionManager::new(&project_dirs, &http, &client_id, device_type, device_name)?;
 
     let mut menu_opts = MenuOpts {
         lib_dir: match fs::path::List::from_env_var("ROFI_BW_LIB_DIR") {
@@ -273,12 +273,12 @@ impl<'dirs, 'http, 'client_id> SessionManager<'dirs, 'http, 'client_id> {
                     self.project_dirs.cache_dir(),
                     self.client_id,
                     auth::Device {
-                        name: &*self.device_name,
+                        name: &self.device_name,
                         identifier: self.data.device_id,
                         r#type: self.device_type,
                     },
-                    &*email,
-                    &**master_password,
+                    email,
+                    &master_password,
                 );
 
                 match result {
@@ -347,11 +347,11 @@ fn try_show_menu(
     };
 
     let res = menu::run(
-        &*opts.lib_dir,
+        &opts.lib_dir,
         &handshake,
         &opts.rofi_options,
-        &*request.display,
-        &*request.filter,
+        &request.display,
+        &request.filter,
     )?;
 
     Ok(match res {
@@ -363,7 +363,7 @@ fn try_show_menu(
             reprompt,
             menu_state,
         } => {
-            if reprompt && !run_reprompt(session, &*cipher_name)? {
+            if reprompt && !run_reprompt(session, &cipher_name)? {
                 return Ok(Some(menu_state));
             }
 
@@ -407,12 +407,12 @@ fn run_reprompt(session: &Session<'_, '_>, cipher_name: &str) -> anyhow::Result<
 
     let mut again = false;
     Ok(loop {
-        let master_password = match ask_master_password::<Infallible>(again, &*status, &[])? {
+        let master_password = match ask_master_password::<Infallible>(again, &status, &[])? {
             ask_master_password::Outcome::Ok(password) => password,
             ask_master_password::Outcome::Cancelled => break false,
             ask_master_password::Outcome::Custom(&unreachable) => match unreachable {},
         };
-        if session.is_correct_master_password(&**master_password) {
+        if session.is_correct_master_password(&master_password) {
             break true;
         }
         again = true;
@@ -479,7 +479,7 @@ mod ask_master_password {
 
         dmenu.arg("-password");
 
-        let outcome = run_dmenu(dmenu, &mut *master_password)
+        let outcome = run_dmenu(dmenu, &mut master_password)
             .context("failed to prompt for master password")?;
 
         Ok(match outcome {

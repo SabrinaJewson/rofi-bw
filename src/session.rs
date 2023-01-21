@@ -21,7 +21,7 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
         let cache = cache::load(cache_dir, &cache_key);
 
         let validated_cache = match cache {
-            Some(cache) => match auth::refresh(http, client_id, &*cache.refresh_token) {
+            Some(cache) => match auth::refresh(http, client_id, &cache.refresh_token) {
                 Ok(token) => Some((cache.prelogin, token)),
                 Err(auth::refresh::Error::SessionExpired(_)) => None,
                 Err(e) => return Err(StartError::Refresh(e)),
@@ -48,7 +48,7 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
                     cache_dir,
                     &cache_key,
                     CacheRef {
-                        refresh_token: &*token.refresh_token,
+                        refresh_token: &token.refresh_token,
                         prelogin: &prelogin,
                     },
                 );
@@ -56,7 +56,7 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
             }
         };
 
-        let account_data = bitwarden_api::Client::new(http, &*token.access_token)
+        let account_data = bitwarden_api::Client::new(http, &token.access_token)
             .sync()
             .map_err(StartError::Sync)?;
 
@@ -75,11 +75,11 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
         &mut self,
     ) -> Result<bitwarden_api::Client<'http, '_, 'static>, auth::refresh::Error> {
         if self.token.is_expired() {
-            self.token = auth::refresh(self.http, self.client_id, &*self.token.refresh_token)?;
+            self.token = auth::refresh(self.http, self.client_id, &self.token.refresh_token)?;
         }
         Ok(bitwarden_api::Client::new(
             self.http,
-            &*self.token.access_token,
+            &self.token.access_token,
         ))
     }
 
@@ -95,7 +95,7 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
     }
 
     pub(crate) fn is_correct_master_password(&self, master_password: &str) -> bool {
-        auth::master_key(&self.prelogin, &*self.email, master_password) == self.master_key
+        auth::master_key(&self.prelogin, &self.email, master_password) == self.master_key
     }
 
     pub(crate) fn master_key(&self) -> &MasterKey {
@@ -103,7 +103,7 @@ impl<'http, 'client_id> Session<'http, 'client_id> {
     }
 
     pub(crate) fn account_data(&self) -> &str {
-        &*self.account_data
+        &self.account_data
     }
 }
 
