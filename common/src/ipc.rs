@@ -5,21 +5,21 @@ pub const PIPE_FD_ENV_VAR: &str = "ROFI_BW_PIPE_FD";
 pub use handshake::Handshake;
 pub mod handshake {
     #[derive(Clone, Copy, bincode::Encode, bincode::Decode)]
-    pub struct Handshake<MasterKeyT, DataT, ViewT> {
+    pub struct Handshake<MasterKeyT, DataT, HistoryT> {
         pub master_key: MasterKeyT,
         pub data: DataT,
-        pub view: ViewT,
+        pub history: HistoryT,
     }
 
-    pub fn write<W, MasterKeyT, DataT, ViewT>(
+    pub fn write<W, MasterKeyT, DataT, HistoryT>(
         mut writer: W,
-        handshake: &Handshake<MasterKeyT, DataT, ViewT>,
+        handshake: &Handshake<MasterKeyT, DataT, HistoryT>,
     ) -> Result<(), WriteError>
     where
         W: io::Write,
         MasterKeyT: Borrow<MasterKey> + bincode::Encode,
         DataT: Borrow<[u8]> + bincode::Encode,
-        ViewT: Borrow<View> + bincode::Encode,
+        HistoryT: Borrow<History<View>> + bincode::Encode,
     {
         let config = bincode::config::standard();
         bincode::encode_into_std_write(handshake, &mut writer, config).map_err(WriteError)?;
@@ -41,9 +41,8 @@ pub mod handshake {
         }
     }
 
-    pub fn read<R: io::BufRead>(
-        mut reader: R,
-    ) -> Result<Handshake<MasterKey, Box<[u8]>, View>, ReadError> {
+    type Owned = Handshake<MasterKey, Box<[u8]>, History<View>>;
+    pub fn read<R: io::BufRead>(mut reader: R) -> Result<Owned, ReadError> {
         let config = bincode::config::standard();
         bincode::decode_from_std_read(&mut reader, config).map_err(ReadError)
     }
@@ -65,6 +64,7 @@ pub mod handshake {
 
     use super::View;
     use crate::MasterKey;
+    use rofi_bw_util::History;
     use std::borrow::Borrow;
     use std::error::Error;
     use std::fmt;
@@ -97,7 +97,9 @@ pub mod menu_request {
         },
         Lock,
         LogOut,
-        Exit,
+        Exit {
+            menu_state: MenuState,
+        },
     }
 
     pub fn write<W>(mut writer: W, menu_request: &MenuRequest) -> Result<(), WriteError>
@@ -148,10 +150,11 @@ pub mod menu_request {
     #[derive(Debug, Default, Clone, bincode::Encode, bincode::Decode)]
     pub struct MenuState {
         pub filter: String,
-        pub view: View,
+        pub history: History<View>,
     }
 
     use super::View;
+    use rofi_bw_util::History;
     use std::error::Error;
     use std::fmt;
     use std::fmt::Display;
@@ -159,7 +162,7 @@ pub mod menu_request {
     use std::io;
 }
 
-#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
 pub enum View {
     List(List),
     NoFolder,
@@ -173,7 +176,7 @@ impl Default for View {
     }
 }
 
-#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, PartialEq, bincode::Encode, bincode::Decode)]
 pub enum Filter {
     Uuid([u8; 16]),
     Name(String),

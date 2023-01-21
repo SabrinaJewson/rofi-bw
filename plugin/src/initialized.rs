@@ -6,10 +6,14 @@ pub(crate) struct Initialized {
 }
 
 impl Initialized {
-    pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
+    pub(crate) fn new(
+        master_key: &MasterKey,
+        data: Data,
+        history: History<ipc::View>,
+    ) -> anyhow::Result<Self> {
         let mut icons = Icons::new()?;
 
-        let state = State::new(master_key, data, view)?;
+        let state = State::new(master_key, data, history)?;
 
         for cipher in &*state.ciphers {
             icons.start_fetch(&cipher.icon);
@@ -27,7 +31,7 @@ impl Initialized {
     pub(crate) const DISPLAY_NAME: &'static str = "bitwarden";
 
     pub(crate) fn status(&self, s: &mut rofi_mode::String) {
-        s.push_str(match self.state.view {
+        s.push_str(match *self.state.history.current() {
             View::List(list) => list.description(),
             View::Folder(i) => &self.state.folders[i].name,
             View::Cipher(i) => &self.state.ciphers[i].name,
@@ -65,11 +69,11 @@ impl Initialized {
     }
 
     pub(crate) fn show(&mut self, list: List) {
-        self.state.view = View::List(list);
+        self.state.history.push(View::List(list));
     }
 
     pub(crate) fn parent(&mut self) {
-        self.state.view = match self.state.view {
+        let parent = match *self.state.history.current() {
             View::List(List::Trash) => View::List(List::Trash),
             View::List(List::All | List::Favourites | List::TypeBucket(_)) => View::List(List::All),
             View::List(List::Folders) | View::Folder(_) => View::List(List::Folders),
@@ -78,17 +82,27 @@ impl Initialized {
                 View::Folder(self.state.folder_map[&folder_id])
             }
         };
+        self.state.history.push(parent);
+    }
+
+    pub(crate) fn navigate(&mut self, navigate: Navigate) {
+        match navigate {
+            Navigate::Back => self.state.history.back(),
+            Navigate::Forward => self.state.history.forward(),
+        }
     }
 
     pub(crate) fn ok_alt(&mut self, line: usize, input: &mut rofi_mode::String) {
         match self.state.viewing() {
             Viewing::CipherList(list) => {
                 input.clear();
-                self.state.view = View::Cipher(list[line]);
+                self.state.history.push(View::Cipher(list[line]));
             }
             Viewing::Folders(_) => {
                 input.clear();
-                self.state.view = View::Folder(typed_slice::Index::from_raw(line));
+                self.state
+                    .history
+                    .push(View::Folder(typed_slice::Index::from_raw(line)));
             }
             Viewing::Cipher(_) => {}
         }
@@ -106,14 +120,16 @@ impl Initialized {
                     Some(default_copy) => (cipher, default_copy),
                     None => {
                         input.clear();
-                        self.state.view = View::Cipher(list[line]);
+                        self.state.history.push(View::Cipher(list[line]));
                         return None;
                     }
                 }
             }
             Viewing::Folders(_) => {
                 input.clear();
-                self.state.view = View::Folder(typed_slice::Index::from_raw(line));
+                self.state
+                    .history
+                    .push(View::Folder(typed_slice::Index::from_raw(line)));
                 return None;
             }
             Viewing::Cipher(cipher) => (cipher, line),
@@ -140,7 +156,7 @@ impl Initialized {
                     reprompt,
                     menu_state: ipc::menu_request::MenuState {
                         filter: input.to_string(),
-                        view: self.ipc_view(),
+                        history: self.ipc_state(),
                     },
                 })
             }
@@ -152,8 +168,8 @@ impl Initialized {
         }
     }
 
-    pub(crate) fn ipc_view(&self) -> ipc::View {
-        match self.state.view {
+    pub(crate) fn ipc_state(&self) -> History<ipc::View> {
+        self.state.history.ref_map(|view| match *view {
             View::List(list) => ipc::View::List(list),
             View::Folder(i) => {
                 let uuid = self.state.folders[i].id;
@@ -167,12 +183,12 @@ impl Initialized {
                 let uuid = self.state.ciphers[i].id;
                 ipc::View::Cipher(ipc::Filter::Uuid(uuid.into_bytes()))
             }
-        }
+        })
     }
 }
 
 struct State {
-    view: View,
+    history: History<View>,
     ciphers: Box<TypedSlice<Cipher>>,
     all: Vec<typed_slice::Index<Cipher>>,
     trash: Vec<typed_slice::Index<Cipher>>,
@@ -184,7 +200,7 @@ struct State {
 
 type FolderMap = HashMap<Option<Uuid>, typed_slice::Index<Folder>>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum View {
     List(List),
     Folder(typed_slice::Index<Folder>),
@@ -192,7 +208,11 @@ enum View {
 }
 
 impl State {
-    pub(crate) fn new(master_key: &MasterKey, data: Data, view: ipc::View) -> anyhow::Result<Self> {
+    pub(crate) fn new(
+        master_key: &MasterKey,
+        data: Data,
+        history: History<ipc::View>,
+    ) -> anyhow::Result<Self> {
         let key = data.profile.key.decrypt(master_key)?;
 
         let collator = Collator::default_locale()?;
@@ -229,7 +249,7 @@ impl State {
         }
 
         Ok(Self {
-            view: match view {
+            history: history.map(|view| match view {
                 ipc::View::List(list) => View::List(list),
                 ipc::View::NoFolder => View::Folder(folders.last_index()),
                 ipc::View::Folder(filter) => {
@@ -254,7 +274,7 @@ impl State {
 
                     index.map_or(View::List(List::All), View::Cipher)
                 }
-            },
+            }),
             ciphers,
             all,
             trash,
@@ -266,7 +286,7 @@ impl State {
     }
 
     pub(crate) fn viewing(&self) -> Viewing<'_> {
-        match self.view {
+        match *self.history.current() {
             View::List(list) => match list {
                 List::All => Viewing::CipherList(&self.all),
                 List::Trash => Viewing::CipherList(&self.trash),
@@ -963,6 +983,12 @@ mod typed_slice {
 
     impl<T> Copy for Index<T> {}
 
+    impl<T> PartialEq for Index<T> {
+        fn eq(&self, other: &Self) -> bool {
+            self.raw == other.raw
+        }
+    }
+
     use core::slice;
     use std::marker::PhantomData;
     use std::ops;
@@ -1077,9 +1103,11 @@ use anyhow::Context as _;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use rofi_bw_common::ipc;
+use rofi_bw_common::menu_keybinds::Navigate;
 use rofi_bw_common::CipherType;
 use rofi_bw_common::List;
 use rofi_bw_common::MasterKey;
+use rofi_bw_util::History;
 use rofi_mode::cairo;
 use std::borrow::Cow;
 use std::collections::HashMap;

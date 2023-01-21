@@ -46,6 +46,16 @@ impl Mode<'_> {
             _ => None,
         }
     }
+
+    fn menu_state(&self, input: &str) -> ipc::menu_request::MenuState {
+        ipc::menu_request::MenuState {
+            filter: input.to_string(),
+            history: match &self.state {
+                State::Initialized(initialized) => initialized.ipc_state(),
+                State::Errored(_) => History::default(),
+            },
+        }
+    }
 }
 
 impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
@@ -58,10 +68,10 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
             let ipc::Handshake {
                 master_key,
                 data,
-                view,
+                history,
             } = ipc::handshake::read(pipe)?;
             let data = serde_json::from_slice(&data).context("failed to read vault data")?;
-            Initialized::new(&master_key, data, view)
+            Initialized::new(&master_key, data, history)
         })();
 
         let state = res
@@ -103,7 +113,8 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
     ) -> rofi_mode::Action {
         match event {
             rofi_mode::Event::Cancel { selected: _ } => {
-                send_request(&mut self.pipe, &ipc::MenuRequest::Exit);
+                let menu_state = self.menu_state(input);
+                send_request(&mut self.pipe, &ipc::MenuRequest::Exit { menu_state });
                 rofi_mode::Action::Exit
             }
             rofi_mode::Event::Ok { alt, selected } => match &mut self.state {
@@ -154,16 +165,16 @@ impl<'rofi> rofi_mode::Mode<'rofi> for Mode<'rofi> {
                         return rofi_mode::Action::Reload;
                     }
                     menu_keybinds::Action::Sync => ipc::MenuRequest::Sync {
-                        menu_state: ipc::menu_request::MenuState {
-                            filter: input.to_string(),
-                            view: match &self.state {
-                                State::Initialized(initialized) => initialized.ipc_view(),
-                                State::Errored(_) => ipc::View::default(),
-                            },
-                        },
+                        menu_state: self.menu_state(input),
                     },
                     menu_keybinds::Action::Lock => ipc::MenuRequest::Lock,
                     menu_keybinds::Action::LogOut => ipc::MenuRequest::LogOut,
+                    menu_keybinds::Action::Navigate(navigate) => {
+                        if let Some(initialized) = self.initialized_mut() {
+                            initialized.navigate(navigate);
+                        }
+                        return rofi_mode::Action::Reload;
+                    }
                 };
                 send_request(&mut self.pipe, &request);
                 rofi_mode::Action::Exit
@@ -314,6 +325,7 @@ use rofi_bw_common::ipc::MenuRequest;
 use rofi_bw_common::keybind;
 use rofi_bw_common::menu_keybinds;
 use rofi_bw_common::MENU_KEYBINDS;
+use rofi_bw_util::History;
 use rofi_mode::cairo;
 use std::fmt::Write as _;
 use std::io::BufReader;

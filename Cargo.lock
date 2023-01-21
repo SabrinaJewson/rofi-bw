@@ -1687,6 +1687,7 @@ name = "rofi-bw-common"
 version = "0.0.0"
 dependencies = [
  "bincode",
+ "rofi-bw-util",
  "subtle",
  "zeroize",
 ]
@@ -1733,6 +1734,7 @@ dependencies = [
 name = "rofi-bw-util"
 version = "0.0.0"
 dependencies = [
+ "bincode",
  "memchr",
  "rand",
 ]

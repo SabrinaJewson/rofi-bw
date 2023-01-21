@@ -6,5 +6,6 @@ publish = false
 
 [dependencies]
 bincode = "2.0.0-rc.1"
+rofi-bw-util = { path = "../util" }
 subtle = "2.4.1"
 zeroize = { version = "1.5.6", features = ["std"] }

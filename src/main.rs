@@ -98,10 +98,7 @@ fn try_main(args: Args) -> anyhow::Result<()> {
     if daemon::invoke(runtime_dir, &request)? {
         return Ok(());
     }
-    let mut request = match request {
-        daemon::Request::ShowMenu(request) => request,
-        _ => unreachable!(),
-    };
+    let daemon::Request::ShowMenu(request) = request else { unreachable!() };
 
     // Having failed to invoke an existing daemon, we must now become the daemon.
 
@@ -132,27 +129,40 @@ fn try_main(args: Args) -> anyhow::Result<()> {
         clipboard: Clipboard::new().context("failed to open clipboard")?,
     };
 
+    let mut display = request.display;
+    let mut menu_state = MenuState {
+        filter: request.filter,
+        history: History::new(request.view),
+    };
+
     while let Some(mut session) = session_manager.start_session()? {
         loop {
-            let after_menu = show_menu(&mut session_manager, session, &mut menu_opts, &request);
+            let after_menu = show_menu(
+                &mut session_manager,
+                session,
+                &mut menu_opts,
+                &display,
+                &mut menu_state,
+            );
 
-            request = if let Some(next_menu_state) = after_menu.next_menu_state {
-                daemon::ShowMenu {
-                    // Keep the same display
-                    display: request.display,
-                    filter: next_menu_state.filter,
-                    view: next_menu_state.view,
-                }
-            } else if after_menu.session.is_none() {
+            if !after_menu.reshow && after_menu.session.is_none() {
                 // If we don’t have to show another menu and don’t have an active session, there’s
                 // no need to keep running.
                 return Ok(());
-            } else {
+            } else if !after_menu.reshow {
                 match daemon.wait() {
-                    daemon::Request::ShowMenu(new) => new,
+                    daemon::Request::ShowMenu(daemon::ShowMenu {
+                        display: new_display,
+                        filter,
+                        view,
+                    }) => {
+                        display = new_display;
+                        menu_state.filter = filter;
+                        menu_state.history.push(view);
+                    }
                     daemon::Request::Quit => return Ok(()),
                 }
-            };
+            }
 
             session = match after_menu.session {
                 Some(session) => session,
@@ -305,7 +315,7 @@ impl<'dirs, 'http, 'client_id> SessionManager<'dirs, 'http, 'client_id> {
 
 struct AfterMenu<'http, 'client_id> {
     session: Option<Session<'http, 'client_id>>,
-    next_menu_state: Option<ipc::menu_request::MenuState>,
+    reshow: bool,
 }
 
 struct MenuOpts {
@@ -319,40 +329,39 @@ fn show_menu<'http, 'client_id>(
     session_manager: &mut SessionManager<'_, '_, '_>,
     session: Session<'http, 'client_id>,
     opts: &mut MenuOpts,
-    request: &daemon::ShowMenu,
+    display: &str,
+    menu_state: &mut MenuState,
 ) -> AfterMenu<'http, 'client_id> {
     let mut session = Some(session);
-    let next_menu_state = try_show_menu(session_manager, &mut session, opts, request)
+    let reshow = try_show_menu(session_manager, &mut session, opts, display, menu_state)
         .unwrap_or_else(|e| {
             report_error(e.context("failed to run menu").as_ref());
-            None
+            false
         });
-    AfterMenu {
-        session,
-        next_menu_state,
-    }
+    AfterMenu { session, reshow }
 }
 
 fn try_show_menu(
     session_manager: &mut SessionManager<'_, '_, '_>,
     session_option: &mut Option<Session<'_, '_>>,
     opts: &mut MenuOpts,
-    request: &daemon::ShowMenu,
-) -> anyhow::Result<Option<ipc::menu_request::MenuState>> {
+    display: &str,
+    menu_state: &mut MenuState,
+) -> anyhow::Result<bool> {
     let session = session_option.as_mut().unwrap();
 
     let handshake = ipc::Handshake {
         master_key: session.master_key(),
         data: session.account_data().as_bytes(),
-        view: &request.view,
+        history: &menu_state.history,
     };
 
     let res = menu::run(
         &opts.lib_dir,
         &handshake,
         &opts.rofi_options,
-        &request.display,
-        &request.filter,
+        display,
+        &menu_state.filter,
     )?;
 
     Ok(match res {
@@ -362,10 +371,12 @@ fn try_show_menu(
             data,
             image_path,
             reprompt,
-            menu_state,
+            menu_state: new_menu_state,
         } => {
+            *menu_state = new_menu_state;
+
             if reprompt && !run_reprompt(session, &cipher_name)? {
-                return Ok(Some(menu_state));
+                return Ok(true);
             }
 
             opts.clipboard
@@ -376,9 +387,12 @@ fn try_show_menu(
                 show_notification(format!("copied {cipher_name} {field}"), image_path);
             }
 
-            None
+            false
         }
-        ipc::MenuRequest::Sync { menu_state } => {
+        ipc::MenuRequest::Sync {
+            menu_state: new_menu_state,
+        } => {
+            *menu_state = new_menu_state;
             match session.resync() {
                 Ok(()) => {}
                 Err(session::ResyncError::Refresh(auth::refresh::Error::SessionExpired(_))) => {
@@ -386,18 +400,24 @@ fn try_show_menu(
                 }
                 Err(e) => return Err(e.into()),
             };
-            Some(menu_state)
+            true
         }
         ipc::MenuRequest::Lock => {
             *session_option = None;
-            None
+            false
         }
         ipc::MenuRequest::LogOut => {
             session_manager.log_out()?;
             *session_option = None;
-            Some(ipc::menu_request::MenuState::default())
+            *menu_state = MenuState::default();
+            true
         }
-        ipc::MenuRequest::Exit => None,
+        ipc::MenuRequest::Exit {
+            menu_state: new_menu_state,
+        } => {
+            *menu_state = new_menu_state;
+            false
+        }
     })
 }
 
@@ -601,10 +621,12 @@ use config::Config;
 use daemon::Daemon;
 use directories::ProjectDirs;
 use rofi_bw_common::ipc;
+use rofi_bw_common::ipc::menu_request::MenuState;
 use rofi_bw_common::CipherType;
 use rofi_bw_common::Keybind;
 use rofi_bw_common::List;
 use rofi_bw_util::fs;
+use rofi_bw_util::History;
 use std::convert::Infallible;
 use std::env;
 use std::process;

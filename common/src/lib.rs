@@ -113,6 +113,13 @@ pub mod menu_keybinds {
         Sync,
         Lock,
         LogOut,
+        Navigate(Navigate),
+    }
+
+    #[derive(Clone, Copy)]
+    pub enum Navigate {
+        Back,
+        Forward,
     }
 
     /// The keybindings, ordered by their custom command number.
@@ -158,7 +165,7 @@ pub mod menu_keybinds {
             description: "Parent",
         },
         Keybind {
-            combination: "Alt+l",
+            combination: "Alt+g",
             action: Action::ShowList(List::TypeBucket(CipherType::Login)),
             description: "Logins",
         },
@@ -177,6 +184,16 @@ pub mod menu_keybinds {
             action: Action::ShowList(List::TypeBucket(CipherType::Identity)),
             description: "Identities",
         },
+        Keybind {
+            combination: "Alt+h",
+            action: Action::Navigate(Navigate::Back),
+            description: "Back",
+        },
+        Keybind {
+            combination: "Alt+l",
+            action: Action::Navigate(Navigate::Forward),
+            description: "Forward",
+        },
     ];
 
     /// Keybinds rows that work with a connection to `rofi-bw` but don't need the data to be loaded.
@@ -187,12 +204,14 @@ pub mod menu_keybinds {
 
     /// Keybinds that require the data to be loaded.
     #[must_use]
-    pub fn with_data() -> [&'static [Keybind<Action>]; 2] {
+    pub fn with_data() -> [&'static [Keybind<Action>]; 3] {
         [
             // Keybinds that select a category (e.g. all, trash) to be shown.
             &MENU_KEYBINDS[3..8],
             // Keybinds that select a specific type bucket to be shown.
-            &MENU_KEYBINDS[8..],
+            &MENU_KEYBINDS[8..12],
+            // Back and forward keybinds
+            &MENU_KEYBINDS[12..14],
         ]
     }
 

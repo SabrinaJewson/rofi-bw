@@ -1,6 +1,6 @@
 pub(crate) fn run(
     lib_dir: &fs::path::List,
-    handshake: &ipc::Handshake<&MasterKey, &[u8], &ipc::View>,
+    handshake: &ipc::Handshake<&MasterKey, &[u8], &History<ipc::View>>,
     rofi_options: &config::RofiOptions,
     display: &str,
     filter: &str,
@@ -133,6 +133,7 @@ use anyhow::Context as _;
 use rofi_bw_common::ipc;
 use rofi_bw_common::MasterKey;
 use rofi_bw_util::fs;
+use rofi_bw_util::History;
 use std::io;
 use std::io::BufReader;
 use std::io::BufWriter;
