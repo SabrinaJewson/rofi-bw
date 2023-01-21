@@ -34,7 +34,7 @@ impl Bitwarden {
             let host = host.clone();
             let http = self.http.clone();
             move || {
-                if let Some(image_file) = disk_cache.load(&*host)? {
+                if let Some(image_file) = disk_cache.load(&host)? {
                     let image_file = fs::file::open::read_only(image_file)?;
 
                     let mut image_file = BufReader::new(image_file);
@@ -52,7 +52,7 @@ impl Bitwarden {
 
                 let runtime = tokio::runtime::Handle::current();
                 let handle = tokio::spawn(async move {
-                    let icon = download_icon(&http, &*host).await?;
+                    let icon = download_icon(&http, &host).await?;
                     anyhow::Ok((icon, host))
                 });
                 let (download_icon::Downloaded { bytes, expires }, host) =
@@ -66,14 +66,14 @@ impl Bitwarden {
                 let path = rayon::in_place_scope(|s| {
                     s.spawn(|_| {
                         cairo_image = Some((|| {
-                            let image = image::load_from_memory(&*bytes)
+                            let image = image::load_from_memory(&bytes)
                                 .context("failed to decode image")?;
 
                             CairoImageData::from_image(&image)
                         })());
                     });
 
-                    disk_cache.store(&*host, &*bytes, expires)
+                    disk_cache.store(&host, &bytes, expires)
                 })?;
                 Ok(Some((path, cairo_image.unwrap()?)))
             }

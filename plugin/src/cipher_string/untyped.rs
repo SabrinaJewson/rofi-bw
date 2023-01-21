@@ -171,7 +171,7 @@ impl Untyped {
 
         let mut buf = vec![0; self.ciphertext.len()];
         let len = <cbc::Decryptor<aes::Aes256>>::new(key.encryption_key().into(), &self.iv.into())
-            .decrypt_padded_b2b_mut::<block_padding::Pkcs7>(&*self.ciphertext, &mut *buf)
+            .decrypt_padded_b2b_mut::<block_padding::Pkcs7>(&self.ciphertext, &mut buf)
             .map_err(DecryptError::Unpadding)?
             .len();
         buf.truncate(len);

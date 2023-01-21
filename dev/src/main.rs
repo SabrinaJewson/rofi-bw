@@ -51,7 +51,7 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
         .arg("build")
         .arg("--package=rofi-bw-plugin")
         .arg("--package=rofi-bw")
-        .args(&["--profile", profile_name])
+        .args(["--profile", profile_name])
         .status()
         .context("failed to spawn Cargo")?;
 
@@ -60,11 +60,11 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
     let target_base = fs::PathBuf::from_iter(["target", profile_dir_name]);
 
     copy_p(
-        &*target_base.join("librofi_bw_plugin.so"),
+        &target_base.join("librofi_bw_plugin.so"),
         fs::Path::new("build/lib/rofi-bw/plugin.so"),
     )?;
     copy_p(
-        &*target_base.join("rofi-bw"),
+        &target_base.join("rofi-bw"),
         fs::Path::new("build/bin/rofi-bw"),
     )?;
     copy_p(
@@ -75,7 +75,7 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
     for card in fs::read_dir(fs::Path::new("resources/cards"))? {
         let card = card?;
         let path = card.path();
-        copy_p(&*path, &*cards_dir.join(path.file_name().unwrap()))?;
+        copy_p(&path, &cards_dir.join(path.file_name().unwrap()))?;
     }
 
     Ok(())

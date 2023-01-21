@@ -87,7 +87,7 @@ impl Inner {
         let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, width, height_signed)
             .context("failed to create image surface")?;
 
-        let context = cairo::Context::new(&*surface).context("failed to create Cairo context")?;
+        let context = cairo::Context::new(&surface).context("failed to create Cairo context")?;
 
         context.set_font_face(&self.cairo_face);
         context.set_source_rgb(0.7, 0.7, 0.7);

@@ -8,7 +8,7 @@
     unused_qualifications
 )]
 #![allow(
-    clippy::large_enum_variant,
+    clippy::single_match_else,
     clippy::match_wildcard_for_single_variants,
     clippy::struct_excessive_bools,
     clippy::needless_pass_by_value,
@@ -259,7 +259,7 @@ fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &MenuRequest)
             anyhow::Ok(())
         })();
         if let Err(e) = res {
-            eprintln!("Error: {:?}", e);
+            eprintln!("Error: {e:?}");
         }
     }
 }
@@ -267,7 +267,7 @@ fn send_request(pipe: &mut Option<BufWriter<UnixStream>>, request: &MenuRequest)
 use error_status::error_status;
 mod error_status {
     pub(crate) fn error_status(error: anyhow::Error) -> String {
-        let escaped = glib::markup_escape_text(&*format!("{error:?}"));
+        let escaped = glib::markup_escape_text(&format!("{error:?}"));
         format!("\n<span foreground='red'>Error:</span> {escaped}")
     }
 

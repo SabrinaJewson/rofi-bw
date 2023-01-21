@@ -84,7 +84,7 @@ pub(crate) trait Stored: Sized {
 
 impl Stored for Vec<u8> {
     fn encode<O, F: FnOnce(&[u8]) -> O>(&self, f: F) -> O {
-        f(&**self)
+        f(self)
     }
     type DecodeError = Infallible;
     fn decode(bytes: Vec<u8>) -> Result<Self, Self::DecodeError> {
@@ -151,7 +151,7 @@ impl CipherString<SymmetricKey> {
         }
 
         let mut key = SymmetricKey::zeroed();
-        key.0.copy_from_slice(&*key_vec);
+        key.0.copy_from_slice(&key_vec);
         Ok(key)
     }
 }

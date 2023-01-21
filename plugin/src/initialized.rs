@@ -29,13 +29,13 @@ impl Initialized {
     pub(crate) fn status(&self, s: &mut rofi_mode::String) {
         s.push_str(match self.state.view {
             View::List(list) => list.description(),
-            View::Folder(i) => &*self.state.folders[i].name,
-            View::Cipher(i) => &*self.state.ciphers[i].name,
+            View::Folder(i) => &self.state.folders[i].name,
+            View::Cipher(i) => &self.state.ciphers[i].name,
         });
         s.push_str("\n");
 
         if !self.error_message.is_empty() {
-            s.push_str(&*self.error_message);
+            s.push_str(&self.error_message);
         }
     }
 
@@ -49,9 +49,9 @@ impl Initialized {
 
     pub(crate) fn entry_content(&self, line: usize) -> &str {
         match self.state.viewing() {
-            Viewing::CipherList(list) => &*self.state.ciphers[list[line]].name,
-            Viewing::Folders(folders) => &*folders[typed_slice::Index::from_raw(line)].name,
-            Viewing::Cipher(cipher) => &*cipher.fields[line].display,
+            Viewing::CipherList(list) => &self.state.ciphers[list[line]].name,
+            Viewing::Folders(folders) => &folders[typed_slice::Index::from_raw(line)].name,
+            Viewing::Cipher(cipher) => &cipher.fields[line].display,
         }
     }
 
@@ -268,15 +268,15 @@ impl State {
     pub(crate) fn viewing(&self) -> Viewing<'_> {
         match self.view {
             View::List(list) => match list {
-                List::All => Viewing::CipherList(&*self.all),
-                List::Trash => Viewing::CipherList(&*self.trash),
-                List::Favourites => Viewing::CipherList(&*self.favourites),
+                List::All => Viewing::CipherList(&self.all),
+                List::Trash => Viewing::CipherList(&self.trash),
+                List::Favourites => Viewing::CipherList(&self.favourites),
                 List::TypeBucket(cipher_type) => {
-                    Viewing::CipherList(&*self.type_buckets[cipher_type])
+                    Viewing::CipherList(&self.type_buckets[cipher_type])
                 }
-                List::Folders => Viewing::Folders(&*self.folders),
+                List::Folders => Viewing::Folders(&self.folders),
             },
-            View::Folder(i) => Viewing::CipherList(&*self.folders[i].contents),
+            View::Folder(i) => Viewing::CipherList(&self.folders[i].contents),
             View::Cipher(i) => Viewing::Cipher(&self.ciphers[i]),
         }
     }
@@ -299,9 +299,9 @@ fn process_folders(
         processed.push(process_folder(folder, key)?);
     }
 
-    try_sort::unstable_by(&mut *processed, |a, b| -> anyhow::Result<_> {
+    try_sort::unstable_by(&mut processed, |a, b| -> anyhow::Result<_> {
         Ok(collator
-            .strcoll_utf8(&*a.name, &*b.name)?
+            .strcoll_utf8(&a.name, &b.name)?
             .then_with(|| a.id.cmp(&b.id)))
     })?;
 
@@ -334,12 +334,12 @@ fn process_ciphers(
         ciphers
             .into_par_iter()
             .map(|cipher| process_cipher(cipher, key)),
-        &mut *processed,
+        &mut processed,
     )?;
 
-    try_sort::unstable_by(&mut *processed, |a, b| -> anyhow::Result<_> {
+    try_sort::unstable_by(&mut processed, |a, b| -> anyhow::Result<_> {
         Ok(collator
-            .strcoll_utf8(&*a.name, &*b.name)?
+            .strcoll_utf8(&a.name, &b.name)?
             .then_with(|| a.id.cmp(&b.id)))
     })?;
 
@@ -465,7 +465,7 @@ fn process_card(
 
     if let Some(brand) = card.brand {
         let brand = brand.decrypt(key)?;
-        icon = Icon::card(&*brand);
+        icon = Icon::card(&brand);
         fields.push(Field::card_brand(brand));
     }
 
@@ -560,11 +560,11 @@ fn extract_host(login: &data::Login, key: &SymmetricKey) -> Option<Arc<str>> {
     let url = url.trim();
     // Algorithm taken from:
     // https://github.com/bitwarden/clients/blob/9eefb4ad169dc1ca08073922c78faafd12cb2752/libs/common/src/misc/utils.ts#L339
-    let url = Url::parse(&*url).ok().or_else(|| {
+    let url = Url::parse(url).ok().or_else(|| {
         if url.starts_with("http://") || url.starts_with("https://") || !url.contains(".") {
             return None;
         }
-        Url::parse(&*format!("http://{url}")).ok()
+        Url::parse(&format!("http://{url}")).ok()
     })?;
 
     match url.host()? {
@@ -647,7 +647,7 @@ impl Field {
         Self::shown("Cardholder name", "cardholder name", name, icon)
     }
     fn card_brand(brand: String) -> Self {
-        let icon = Icon::card(&*brand).unwrap_or(Icon::Glyph(icons::Glyph::Card));
+        let icon = Icon::card(&brand).unwrap_or(Icon::Glyph(icons::Glyph::Card));
         Self::shown("Brand", "brand", brand, icon)
     }
     fn card_number(number: String) -> Self {
@@ -681,7 +681,7 @@ impl Field {
                 name = part;
             } else {
                 name.push(' ');
-                name.push_str(&*part);
+                name.push_str(&part);
             }
         }
         Self::shown("Identity name", "name", name, icons::Glyph::Identity)

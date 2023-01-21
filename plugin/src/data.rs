@@ -97,6 +97,8 @@ impl<'de> Deserialize<'de> for Cipher {
 }
 
 #[derive(Debug)]
+// This is already stored on-heap as it’s in a `Vec`
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum CipherData {
     Login(Login),
     SecureNote,
