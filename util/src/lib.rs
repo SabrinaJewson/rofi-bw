@@ -71,18 +71,33 @@ pub mod history {
         }
     }
 
-    impl<T: bincode::Decode> bincode::Decode for History<T> {
-        fn decode<D: bincode::de::Decoder>(
-            decoder: &mut D,
+    impl<T> History<T> {
+        fn bincode_validate(
+            stack: Vec<T>,
+            current: usize,
         ) -> Result<Self, bincode::error::DecodeError> {
-            let stack = <Vec<T>>::decode(decoder)?;
-            let current = usize::decode(decoder)?;
             if stack.len() <= current {
                 return Err(bincode::error::DecodeError::OtherString(format!(
                     "history index `{current}` is out of bounds"
                 )));
             }
             Ok(Self { stack, current })
+        }
+    }
+
+    impl<T: bincode::Decode> bincode::Decode for History<T> {
+        fn decode<D: bincode::de::Decoder>(
+            decoder: &mut D,
+        ) -> Result<Self, bincode::error::DecodeError> {
+            Self::bincode_validate(Vec::decode(decoder)?, usize::decode(decoder)?)
+        }
+    }
+
+    impl<'de, T: bincode::BorrowDecode<'de>> bincode::BorrowDecode<'de> for History<T> {
+        fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+            decoder: &mut D,
+        ) -> Result<Self, bincode::error::DecodeError> {
+            Self::bincode_validate(Vec::borrow_decode(decoder)?, usize::borrow_decode(decoder)?)
         }
     }
 }
