@@ -12,8 +12,8 @@ pub(crate) struct ShowMenu {
     /// The initial filter to start Rofi with.
     pub(crate) filter: String,
 
-    /// The view to display in `rofi-bw`
-    pub(crate) view: ipc::View,
+    /// The view to display in `rofi-bw`; `None` if it will just show the last in history
+    pub(crate) view: Option<ipc::View>,
 }
 
 #[derive(bincode::Encode, bincode::Decode)]

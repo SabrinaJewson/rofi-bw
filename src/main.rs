@@ -29,7 +29,7 @@ fn main() -> process::ExitCode {
 #[derive(clap::Parser)]
 #[clap(version)]
 #[clap(group = clap::ArgGroup::new("view").args(&[
-    "cipher-uuid", "cipher-name", "folder-uuid", "folder-name", "show"
+    "cipher-uuid", "cipher-name", "folder-uuid", "folder-name", "show", "reopen-last"
 ]))]
 struct Args {
     /// The initial filter to use in Rofi.
@@ -55,6 +55,10 @@ struct Args {
     /// Which cipher list rofi-bw will open showing; mutually exclusive with `--cipher-uuid`.
     #[clap(long, value_enum)]
     show: Option<Show>,
+
+    /// Have `rofi-bw` open showing the previous option in history.
+    #[clap(long)]
+    reopen_last: bool,
 
     /// Path to the config file; defaults to `$XDG_CONFIG_DIR/rofi-bw/config.toml`.
     ///
@@ -132,7 +136,7 @@ fn try_main(args: Args) -> anyhow::Result<()> {
     let mut display = request.display;
     let mut menu_state = MenuState {
         filter: request.filter,
-        history: History::new(request.view),
+        history: request.view.map_or_else(History::default, History::new),
     };
 
     while let Some(mut session) = session_manager.start_session()? {
@@ -158,7 +162,9 @@ fn try_main(args: Args) -> anyhow::Result<()> {
                     }) => {
                         display = new_display;
                         menu_state.filter = filter;
-                        menu_state.history.push(view);
+                        if let Some(view) = view {
+                            menu_state.history.push(view);
+                        }
                     }
                     daemon::Request::Quit => return Ok(()),
                 }
@@ -188,6 +194,7 @@ fn process_args(
         folder_name,
         show,
         config_file,
+        reopen_last,
     }: Args,
 ) -> anyhow::Result<ProcessedArgs> {
     let display = env::var("DISPLAY").context("failed to read `$DISPLAY` env var")?;
@@ -195,16 +202,27 @@ fn process_args(
     let request = daemon::ShowMenu {
         display,
         filter,
-        view: match (cipher_uuid, cipher_name, folder_uuid, folder_name, show) {
-            (Some(uuid), None, None, None, None) => {
-                ipc::View::Cipher(ipc::Filter::Uuid(uuid.into_bytes()))
+        view: match (
+            cipher_uuid,
+            cipher_name,
+            folder_uuid,
+            folder_name,
+            show,
+            reopen_last,
+        ) {
+            (Some(uuid), None, None, None, None, false) => {
+                Some(ipc::View::Cipher(ipc::Filter::Uuid(uuid.into_bytes())))
             }
-            (None, Some(name), None, None, None) => ipc::View::Cipher(ipc::Filter::Name(name)),
-            (None, None, Some(uuid), None, None) => {
-                ipc::View::Folder(ipc::Filter::Uuid(uuid.into_bytes()))
+            (None, Some(name), None, None, None, false) => {
+                Some(ipc::View::Cipher(ipc::Filter::Name(name)))
             }
-            (None, None, None, Some(name), None) => ipc::View::Folder(ipc::Filter::Name(name)),
-            (None, None, None, None, Some(show)) => ipc::View::List(match show {
+            (None, None, Some(uuid), None, None, false) => {
+                Some(ipc::View::Folder(ipc::Filter::Uuid(uuid.into_bytes())))
+            }
+            (None, None, None, Some(name), None, false) => {
+                Some(ipc::View::Folder(ipc::Filter::Name(name)))
+            }
+            (None, None, None, None, Some(show), false) => Some(ipc::View::List(match show {
                 Show::All => List::All,
                 Show::Trash => List::Trash,
                 Show::Favourites => List::Favourites,
@@ -213,8 +231,9 @@ fn process_args(
                 Show::Cards => List::TypeBucket(CipherType::Card),
                 Show::Identities => List::TypeBucket(CipherType::Identity),
                 Show::Folders => List::Folders,
-            }),
-            (None, None, None, None, None) => ipc::View::default(),
+            })),
+            (None, None, None, None, None, true) => None,
+            (None, None, None, None, None, false) => Some(ipc::View::default()),
             _ => unreachable!("args are mutually exclusive"),
         },
     };

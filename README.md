@@ -56,6 +56,9 @@ OPTIONS:
     -h, --help
             Print help information
 
+        --reopen-last
+            Have `rofi-bw` open showing the previous option in history
+
         --show <SHOW>
             Which cipher list rofi-bw will open showing; mutually exclusive with `--cipher-uuid`
 
