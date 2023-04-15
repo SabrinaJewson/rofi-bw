@@ -225,7 +225,7 @@ Therefore I recommend defining a wrapper script at `~/.local/bin/rofi-bw`:
 
 ```sh
 #!/bin/sh
-ICU_DATA=/usr/share/icu/71.1 exec /usr/local/bin/rofi-bw "$@"
+ICU_DATA=/usr/share/icu/72.1 exec /usr/local/bin/rofi-bw "$@"
 ```
 
 ### From source

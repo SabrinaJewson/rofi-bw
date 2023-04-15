@@ -21,7 +21,7 @@
           uses: "actions/checkout@v3",
           with: {
             repository: "unicode-org/icu",
-            ref: "release-71-1",
+            ref: "release-72-1",
             path: "icu",
           },
         },
