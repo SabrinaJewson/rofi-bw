@@ -3,7 +3,7 @@ members = ["util", "dev", "plugin", "common"]
 
 [package]
 name = "rofi-bw"
-version = "1.1.1"
+version = "1.1.2"
 edition = "2021"
 publish = false
 license = "MIT"
