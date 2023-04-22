@@ -17,7 +17,7 @@ fn main() -> anyhow::Result<()> {
     env::set_current_dir(manifest_dir).context("failed to set current dir")?;
 
     match Args::parse() {
-        Args::Build(args) => build(args),
+        Args::Build(args) => build(&args),
         Args::Run(args) => run(args),
     }
 }
@@ -37,7 +37,17 @@ struct BuildArgs {
     release: bool,
 }
 
-fn build(args: BuildArgs) -> anyhow::Result<()> {
+impl BuildArgs {
+    fn binary_path(&self) -> &'static fs::Path {
+        if self.release {
+            fs::Path::new("build/bin/rofi-bw")
+        } else {
+            fs::Path::new("build/bin/rofi-bw-dev")
+        }
+    }
+}
+
+fn build(args: &BuildArgs) -> anyhow::Result<()> {
     let profile_name = match args.release {
         true => "release",
         false => "dev",
@@ -63,10 +73,7 @@ fn build(args: BuildArgs) -> anyhow::Result<()> {
         &target_base.join("librofi_bw_plugin.so"),
         fs::Path::new("build/lib/rofi-bw/plugin.so"),
     )?;
-    copy_p(
-        &target_base.join("rofi-bw"),
-        fs::Path::new("build/bin/rofi-bw-dev"),
-    )?;
+    copy_p(&target_base.join("rofi-bw"), args.binary_path())?;
     copy_p(
         fs::Path::new("resources/bwi-font.ttf"),
         fs::Path::new("build/share/rofi-bw/bwi-font.ttf"),
@@ -92,11 +99,11 @@ struct RunArgs {
 }
 
 fn run(args: RunArgs) -> anyhow::Result<()> {
-    if let Err(e) = build(args.build_args) {
+    if let Err(e) = build(&args.build_args) {
         eprintln!("Warning: failed to build: {e:?}");
     }
 
-    let status = process::Command::new(fs::Path::new("build/bin/rofi-bw-dev"))
+    let status = process::Command::new(args.build_args.binary_path())
         .env("ROFI_BW_LIB_DIR", fs::Path::new("build/lib/rofi-bw"))
         // Put a path that will always fail at start for extra testing
         .env("XDG_DATA_DIRS", "doesnt-exist:build/share")
