@@ -215,6 +215,8 @@ Runtime dependencies:
 
 ### From prebuilt binaries
 
+> This method only works when your system ICU is the same version as Ubuntu’s latest.
+
 Head to the [releases](https://github.com/SabrinaJewson/rofi-bw/releases) page
 and download the latest release as a `.tar.gz`.
 One extracted, you can run `sudo ./install.sh`
