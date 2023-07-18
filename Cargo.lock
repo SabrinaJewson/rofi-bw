@@ -1704,7 +1704,6 @@ dependencies = [
  "hkdf",
  "hmac",
  "image",
- "paste",
  "rand",
  "rayon",
  "reqwest",
@@ -1758,8 +1757,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_common"
-version = "2.0.3"
-source = "git+https://github.com/SabrinaJewson/rust_icu?branch=static#52fb1ad8d866ffc5e88e54b4685c5e963bffa3a7"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f9d6105fe694f4c0f9ff9a20863c47018c09456b221a0473e5359bf37017e4d"
 dependencies = [
  "anyhow",
  "rust_icu_sys",
@@ -1768,8 +1768,9 @@ dependencies = [
 
 [[package]]
 name = "rust_icu_sys"
-version = "2.0.3"
-source = "git+https://github.com/SabrinaJewson/rust_icu?branch=static#52fb1ad8d866ffc5e88e54b4685c5e963bffa3a7"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77591b9849b60c741a1ee3bad21c583c0d9409f462b89d22c5055999d0594180"
 dependencies = [
  "anyhow",
  "bindgen",

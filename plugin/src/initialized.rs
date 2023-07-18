@@ -1010,23 +1010,13 @@ mod collator {
     // SAFETY: ICU APIs are thread-safe
     unsafe impl Sync for Collator {}
 
-    const _: () = {
-        // TODO: Don’t import this: https://github.com/google/rust_icu/pull/251
-        #[allow(clippy::wildcard_imports)]
-        use rust_icu_sys::*;
-        // TODO: Don’t import this: https://github.com/google/rust_icu/pull/252
-        use rust_icu_sys::versioned_function;
-        rust_icu_common::simple_drop_impl!(Collator, ucol_close);
-    };
+    rust_icu_common::simple_drop_impl!(Collator, ucol_close);
 
     impl Collator {
         pub(crate) fn default_locale() -> anyhow::Result<Self> {
             let mut status = rust_icu_common::Error::OK_CODE;
             let rep = unsafe {
-                // TODO: Don’t import this: https://github.com/google/rust_icu/pull/251
-                #[allow(clippy::wildcard_imports)]
-                use rust_icu_sys::*;
-                versioned_function!(ucol_open)(ptr::null(), &mut status)
+                rust_icu_sys::versioned_function!(ucol_open)(ptr::null(), &mut status)
             };
             rust_icu_common::Error::ok_or_warning(status)
                 .context("failed to open Unicode collator")?;
@@ -1047,9 +1037,7 @@ mod collator {
 
             let mut status = rust_icu_common::Error::OK_CODE;
             let res = unsafe {
-                #[allow(clippy::wildcard_imports)]
-                use rust_icu_sys::*;
-                versioned_function!(ucol_strcollUTF8)(
+                rust_icu_sys::versioned_function!(ucol_strcollUTF8)(
                     self.rep.as_ptr(),
                     a.as_ptr().cast(),
                     a_len,
