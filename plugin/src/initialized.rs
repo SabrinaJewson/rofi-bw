@@ -1015,9 +1015,8 @@ mod collator {
     impl Collator {
         pub(crate) fn default_locale() -> anyhow::Result<Self> {
             let mut status = rust_icu_common::Error::OK_CODE;
-            let rep = unsafe {
-                rust_icu_sys::versioned_function!(ucol_open)(ptr::null(), &mut status)
-            };
+            let rep =
+                unsafe { rust_icu_sys::versioned_function!(ucol_open)(ptr::null(), &mut status) };
             rust_icu_common::Error::ok_or_warning(status)
                 .context("failed to open Unicode collator")?;
 

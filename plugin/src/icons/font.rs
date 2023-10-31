@@ -95,19 +95,15 @@ impl Inner {
         // noticed this on the key one), so it’s more reliable to make it slightly smaller.
         context.set_font_size(f64::from(height) * 0.95);
 
-        let mut glyphs = [cairo::Glyph {
-            index: u64::from(index),
-            x: 0.0,
-            y: 0.0,
-        }];
+        let mut glyphs = [cairo::Glyph::new(u64::from(index), 0.0, 0.0)];
 
         let extents = context
             .glyph_extents(&glyphs)
             .context("failed to get glyph extents")?;
 
         // Center the glyph
-        glyphs[0].x = f64::from(width) / 2.0 - (extents.width / 2.0 + extents.x_bearing);
-        glyphs[0].y = f64::from(height) / 2.0 - (extents.height / 2.0 + extents.y_bearing);
+        glyphs[0].set_x(f64::from(width) / 2.0 - (extents.width() / 2.0 + extents.x_bearing()));
+        glyphs[0].set_y(f64::from(height) / 2.0 - (extents.height() / 2.0 + extents.y_bearing()));
 
         context
             .show_glyphs(&glyphs)
